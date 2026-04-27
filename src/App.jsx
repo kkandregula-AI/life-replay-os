@@ -1774,26 +1774,6 @@ function FutureSimView({ memories }) {
     </div>
   );
 }
-  return (
-    <div>
-      <div className="view-header"><div><div className="view-title">Future Simulator</div><div className="view-subtitle">Model Option A vs B against your personal history</div></div></div>
-      <div className="view-body">
-        <div className="ai-panel">
-          <div className="ai-panel-title">◇ Decision Parameters</div>
-          <div className="fg" style={{marginBottom:"14px"}}><label className="fl">Current Situation</label><textarea className="ai-textarea" rows={2} placeholder="Describe what you are facing..." value={situation} onChange={e=>setSituation(e.target.value)}/></div>
-          <div className="sim-grid">
-            <div className="option-card option-a"><div className="option-label">Option A</div><textarea className="ai-textarea" rows={3} placeholder="Describe Option A..." value={optA} onChange={e=>setOptA(e.target.value)}/></div>
-            <div className="option-card option-b"><div className="option-label">Option B</div><textarea className="ai-textarea" rows={3} placeholder="Describe Option B..." value={optB} onChange={e=>setOptB(e.target.value)}/></div>
-          </div>
-          <div className="ai-actions"><button className="btn-primary" onClick={simulate} disabled={!situation.trim()||!optA.trim()||!optB.trim()||loading}>{loading?"Simulating...":"Run Simulation →"}</button><button className="btn-sec" onClick={()=>{setSituation("");setOptA("");setOptB("");setResponse("")}} disabled={loading}>Reset</button></div>
-        </div>
-        {loading&&<div className="ai-response"><Spinner/></div>}
-        {error&&<ErrBox msg={error}/>}
-        {response&&!loading&&<div className="ai-response"><div className="ai-response-label"><div className="ai-pulse gold"/>Simulation Complete</div><div className="ai-response-text">{response}</div></div>}
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GRAPH VIEW
