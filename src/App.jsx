@@ -469,7 +469,31 @@ async function callClaude(system, userMsg, maxTokens = 1000) {
 
 async function callClaudeJSON(system, userMsg, maxTokens = 1500) {
   const text = await callClaude(system, userMsg, maxTokens);
-  return JSON.parse(text.replace(/```json|```/g,"").trim());
+
+  // Strategy 1: strip fences, parse
+  try {
+    const c = text.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m => m.replace(/```json|```/g,"")).trim();
+    return JSON.parse(c);
+  } catch {}
+
+  // Strategy 2: extract [...] or {...} block
+  try {
+    const match = text.match(/[\[{][\s\S]*[\]}]/);
+    if (match) return JSON.parse(match[0]);
+  } catch {}
+
+  // Strategy 3: fix trailing commas + unquoted keys
+  try {
+    const match = text.match(/[\[{][\s\S]*[\]}]/);
+    if (match) {
+      const fixed = match[0]
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":');
+      return JSON.parse(fixed);
+    }
+  } catch {}
+
+  throw new Error("AI returned unexpected format. Please try again.");
 }
 
 async function callClaudeWithDoc(system, userMsg, base64Data, mediaType, maxTokens = 2000) {
@@ -1296,7 +1320,50 @@ function ImportHubView({ onImport }) {
   const reset=()=>{setExtracted([]);setSelected(new Set());setError("");setSuccess("");setProgress(0);};
   const toggleKw=k=>setGmailKeywords(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});
   const toggleSel=i=>setSelected(p=>{const n=new Set(p);n.has(i)?n.delete(i):n.add(i);return n;});
-  const parseItems=raw=>{const c=raw.replace(/```json|```/g,"").trim();const p=JSON.parse(c);return Array.isArray(p)?p:[p];};
+  const parseItems = (raw) => {
+    // Strategy 1: strip code fences, parse directly
+    try {
+      const clean = raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m =>
+        m.replace(/```json|```/g, "")
+      ).trim();
+      const p = JSON.parse(clean);
+      return Array.isArray(p) ? p : [p];
+    } catch {}
+
+    // Strategy 2: extract first [...] block with regex
+    try {
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (match) {
+        const p = JSON.parse(match[0]);
+        return Array.isArray(p) ? p : [p];
+      }
+    } catch {}
+
+    // Strategy 3: fix common LLM JSON mistakes then parse
+    try {
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (match) {
+        const fixed = match[0]
+          .replace(/,\s*([}\]])/g, "$1")          // trailing commas
+          .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // unquoted keys
+          .replace(/:\s*'([^']*)'/g, ':"$1"');     // single-quoted values
+        const p = JSON.parse(fixed);
+        return Array.isArray(p) ? p : [p];
+      }
+    } catch {}
+
+    // Strategy 4: extract individual {...} objects manually
+    try {
+      const objects = [];
+      const objMatches = raw.matchAll(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g);
+      for (const m of objMatches) {
+        try { objects.push(JSON.parse(m[0])); } catch {}
+      }
+      if (objects.length > 0) return objects;
+    } catch {}
+
+    throw new Error("Could not parse AI response as JSON. The AI may have returned unexpected text. Please try again.");
+  };
 
   // Kick off Google OAuth — get auth URL from server, redirect
   const handleGmailConnect = async () => {
