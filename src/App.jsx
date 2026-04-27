@@ -137,7 +137,10 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .mc-title{font-family:'Cinzel',serif;font-size:13px;font-weight:600;color:var(--text);margin-bottom:5px;letter-spacing:.02em;line-height:1.3}
 .mc-situation{font-size:12.5px;color:var(--text-dim);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mc-footer{display:flex;align-items:center;justify-content:space-between;margin-top:11px}
-.mc-date{font-family:'JetBrains Mono',monospace;font-size:8.5px;color:var(--text-muted)}
+.mc-delete{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:5px;background:rgba(224,92,92,0);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(224,92,92,0);transition:all .18s;z-index:2}
+.memory-card:hover .mc-delete{background:rgba(224,92,92,.12);color:rgba(224,92,92,.7)}
+.mc-delete:hover{background:rgba(224,92,92,.25) !important;color:#e05c5c !important}
+
 .mc-tags{display:flex;flex-wrap:wrap;gap:4px}
 .tag{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(201,153,58,.07);color:var(--gold-dim);letter-spacing:.04em}
 
@@ -363,8 +366,20 @@ const NAV = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API KEY STORAGE  (persisted in localStorage, sent as header — never in source)
+// MEMORY PERSISTENCE  (IndexedDB-style via localStorage)
 // ─────────────────────────────────────────────────────────────────────────────
+const MEMORIES_KEY = "lros_memories";
+const loadMemories = () => {
+  try {
+    const raw = localStorage.getItem(MEMORIES_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch { return null; }
+};
+const saveMemories = (memories) => {
+  try { localStorage.setItem(MEMORIES_KEY, JSON.stringify(memories)); } catch {}
+};
 const KEY_STORAGE = "lros_api_key";
 const getStoredKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; } };
 const saveKey      = (k) => { try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch {} };
@@ -468,22 +483,43 @@ async function callClaudeWithGmail(keywords) {
     method:"POST",
     headers: apiHeaders(),
     body: JSON.stringify({
-      model:"claude-sonnet-4-20250514", max_tokens:3000,
+      model:"claude-sonnet-4-20250514",
+      max_tokens: 3000,
       mcp_servers:[{
-        type:"url",
-        url:"https://gmailmcp.googleapis.com/mcp/v1",
-        name:"gmail-mcp",
+        type: "url",
+        url: "https://gmailmcp.googleapis.com/mcp/v1",
+        name: "gmail-mcp",
         authorization_token: token,
       }],
-      system:`You are a life event extractor. Search Gmail for keywords. Return ONLY a JSON array:
-[{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]`,
-      messages:[{role:"user",content:`Search Gmail for: ${keywords.join(", ")}. Find offer letters, loans, approvals, financial statements, medical. Return JSON array only.`}],
+      system: `You are a life event extractor. Search the user's Gmail inbox for emails related to the given keywords.
+For each important email found, extract it as a structured life memory.
+Return ONLY a valid JSON array — no markdown, no explanation:
+[{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]
+If no emails found, return an empty array: []`,
+      messages:[{
+        role: "user",
+        content: `Search my Gmail for emails related to these topics: ${keywords.join(", ")}.
+Look for: job offer letters, loan approvals, salary slips, investment confirmations, rejection emails, insurance documents, promotions, resignations.
+Extract each important email as a life memory. Return only the JSON array.`
+      }],
     }),
   });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error || `Server error ${resp.status}`);
+  }
+
   const data = await resp.json();
   if (data.error) throw new Error(data.error.message || data.error);
-  const textBlock = data.content.find(b => b.type==="text");
-  return JSON.parse(textBlock.text.replace(/```json|```/g,"").trim());
+
+  // Find text content in response (may include tool_use blocks)
+  const textBlock = data.content?.find(b => b.type === "text");
+  if (!textBlock) throw new Error("No text response from Gmail scan — the inbox scan may have returned no results.");
+
+  const clean = textBlock.text.replace(/```json|```/g, "").trim();
+  if (!clean || clean === "[]") return [];
+  return JSON.parse(clean);
 }
 
 function memoriesContext(memories) {
@@ -1015,11 +1051,15 @@ function LifeGraph({ memories }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MEMORY CARD + MODALS
 // ─────────────────────────────────────────────────────────────────────────────
-function MemoryCard({ m, onClick }) {
+function MemoryCard({ m, onClick, onDelete }) {
   const col = CAT_COLORS[m.category]||"#888";
   return (
     <div className="memory-card" onClick={()=>onClick(m)} style={{position:"relative"}}>
       <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:col,opacity:.6,borderRadius:"11px 11px 0 0"}}/>
+      {onDelete && (
+        <button className="mc-delete" title="Delete memory"
+          onClick={e=>{e.stopPropagation();onDelete(m.id);}}>✕</button>
+      )}
       <div className="mc-header"><span className="mc-badge" style={{color:col}}>{m.category}</span><span style={{color:OUTCOME_COLORS[m.outcome],fontSize:"13px"}}>{OUTCOME_ICONS[m.outcome]}</span></div>
       <div className="mc-title">{m.title}</div>
       <div className="mc-situation">{m.situation}</div>
@@ -1028,7 +1068,7 @@ function MemoryCard({ m, onClick }) {
   );
 }
 
-function DetailModal({ m, onClose }) {
+function DetailModal({ m, onClose, onDelete }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1047,7 +1087,15 @@ function DetailModal({ m, onClose }) {
           <div style={{display:"flex",gap:"3px"}}>{Array.from({length:10}).map((_,i)=><div key={i} style={{width:"11px",height:"11px",borderRadius:"2px",background:i<m.stress?(m.stress>7?"var(--red)":m.stress>4?"var(--yellow)":"var(--green)"):"rgba(255,255,255,.06)"}}/>)}</div>
           <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",color:"var(--text-dim)"}}>{m.stress}/10</div>
         </div>
-        <div className="modal-actions"><button className="btn-primary" onClick={onClose}>Close</button></div>
+        <div className="modal-actions" style={{justifyContent:"space-between"}}>
+          {onDelete && (
+            <button className="btn-sec" style={{color:"var(--red)",borderColor:"rgba(224,92,92,.2)"}}
+              onClick={()=>{onDelete(m.id);onClose();}}>
+              Delete Memory
+            </button>
+          )}
+          <button className="btn-primary" onClick={onClose}>Close</button>
+        </div>
       </div>
     </div>
   );
@@ -1362,19 +1410,28 @@ function DashboardView({ memories, setView, setShowCapture }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // VAULT
 // ─────────────────────────────────────────────────────────────────────────────
-function VaultView({ memories, setShowCapture }) {
+function VaultView({ memories, setShowCapture, onDelete }) {
   const [filter,setFilter]=useState("all");
   const [selected,setSelected]=useState(null);
   const cats=["all",...new Set(memories.map(m=>m.category))];
   const filtered=filter==="all"?memories:memories.filter(m=>m.category===filter);
   return (
     <div>
-      <div className="view-header"><div><div className="view-title">Memory Vault</div><div className="view-subtitle">All indexed life events — click any card to replay it</div></div><button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture</button></div>
-      <div className="view-body">
-        <div className="vault-toolbar">{cats.map(c=><button key={c} className={`filter-btn${filter===c?" active":""}`} onClick={()=>setFilter(c)} style={filter===c&&c!=="all"?{color:CAT_COLORS[c],borderColor:`${CAT_COLORS[c]}40`}:{}}>{c}</button>)}<span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{filtered.length} records</span></div>
-        {filtered.length===0?<div className="empty-state"><div className="empty-icon">◈</div><div className="empty-title">No memories here</div></div>:<div className="memory-grid">{filtered.map(m=><MemoryCard key={m.id} m={m} onClick={setSelected}/>)}</div>}
+      <div className="view-header">
+        <div><div className="view-title">Memory Vault</div><div className="view-subtitle">All indexed life events — hover a card to delete it</div></div>
+        <button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture</button>
       </div>
-      {selected&&<DetailModal m={selected} onClose={()=>setSelected(null)}/>}
+      <div className="view-body">
+        <div className="vault-toolbar">
+          {cats.map(c=><button key={c} className={`filter-btn${filter===c?" active":""}`} onClick={()=>setFilter(c)} style={filter===c&&c!=="all"?{color:CAT_COLORS[c],borderColor:`${CAT_COLORS[c]}40`}:{}}>{c}</button>)}
+          <span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{filtered.length} records</span>
+        </div>
+        {filtered.length===0
+          ? <div className="empty-state"><div className="empty-icon">◈</div><div className="empty-title">No memories here</div></div>
+          : <div className="memory-grid">{filtered.map(m=><MemoryCard key={m.id} m={m} onClick={setSelected} onDelete={onDelete}/>)}</div>
+        }
+      </div>
+      {selected && <DetailModal m={selected} onClose={()=>setSelected(null)} onDelete={onDelete}/>}
     </div>
   );
 }
@@ -1488,7 +1545,8 @@ function GraphView({ memories }) {
 // ROOT APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [memories,    setMemories]    = useState(SAMPLE);
+  // Load from localStorage first, fall back to SAMPLE only if nothing saved yet
+  const [memories, setMemories] = useState(() => loadMemories() || SAMPLE);
   const [activeView,  setActiveView]  = useState("dashboard");
   const [showCapture, setShowCapture] = useState(false);
   const [collapsed,   setCollapsed]   = useState(false);
@@ -1497,7 +1555,24 @@ export default function App() {
   const [oauthProcessing, setOauthProcessing] = useState(false);
   const [oauthError,      setOauthError]      = useState("");
 
-  const addMemory = useCallback(m => setMemories(prev => [{...m, id:`m${Date.now()}`}, ...prev]), []);
+  // Persist memories to localStorage whenever they change
+  useEffect(() => { saveMemories(memories); }, [memories]);
+
+  const addMemory = useCallback(m => {
+    setMemories(prev => {
+      const updated = [{...m, id:`m${Date.now()}`}, ...prev];
+      saveMemories(updated);
+      return updated;
+    });
+  }, []);
+
+  const deleteMemory = useCallback(id => {
+    setMemories(prev => {
+      const updated = prev.filter(m => m.id !== id);
+      saveMemories(updated);
+      return updated;
+    });
+  }, []);
 
   // ── Handle Google OAuth callback ──────────────────────────────────────────
   useEffect(() => {
@@ -1562,7 +1637,7 @@ export default function App() {
   const renderView = () => {
     switch(activeView) {
       case "dashboard": return <DashboardView memories={memories} setView={handleNav} setShowCapture={setShowCapture}/>;
-      case "vault":     return <VaultView memories={memories} setShowCapture={setShowCapture}/>;
+      case "vault":     return <VaultView memories={memories} setShowCapture={setShowCapture} onDelete={deleteMemory}/>;
       case "decision":  return <DecisionEngineView memories={memories}/>;
       case "simulator": return <FutureSimView memories={memories}/>;
       case "premortem": return <PreMortemView memories={memories}/>;
@@ -1620,6 +1695,14 @@ export default function App() {
             <button className="add-mem-btn" onClick={() => { setShowCapture(true); setCollapsed(true); }}>
               {collapsed ? "+" : "+ Capture Memory"}
             </button>
+            {!collapsed && (
+              <button onClick={()=>{if(window.confirm("Clear ALL memories and start fresh?"))setMemories([]);}}
+                style={{width:"100%",marginTop:"6px",background:"none",border:"1px solid rgba(224,92,92,.15)",borderRadius:"7px",padding:"6px",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",letterSpacing:".08em",color:"rgba(224,92,92,.45)",textTransform:"uppercase",transition:"all .2s"}}
+                onMouseOver={e=>e.target.style.color="rgba(224,92,92,.8)"}
+                onMouseOut={e=>e.target.style.color="rgba(224,92,92,.45)"}>
+                Clear All
+              </button>
+            )}
           </div>
         </aside>
 
