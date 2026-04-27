@@ -1,0 +1,14 @@
+{
+  "name": "life-replay-os",
+  "version": "3.0.0",
+  "description": "Personal Decision Intelligence System — v3 with Pre-Mortem + Blindspot Detector",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": { "react": "^18.3.1", "react-dom": "^18.3.1" },
+  "devDependencies": { "@vitejs/plugin-react": "^4.3.4", "vite": "^5.4.11", "vercel": "^37.14.0" }
+}
