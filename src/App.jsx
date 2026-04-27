@@ -1143,6 +1143,8 @@ function ImportHubView({ onImport }) {
       setError("Gmail scan failed: " + e.message);
     } finally { setLoading(false); }
   };
+
+  const handleFile = async file => {
     if(!file) return; reset(); setLoading(true); setProgress(20);
     try{
       const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
