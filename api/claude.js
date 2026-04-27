@@ -1,7 +1,15 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
+
+  // Priority: key sent by the user in header > Vercel env var
+  const apiKey = req.headers["x-user-api-key"] || process.env.ANTHROPIC_API_KEY;
+
+  if (!apiKey) {
+    return res.status(401).json({
+      error: "No API key provided. Please enter your Anthropic API key in the app settings."
+    });
+  }
+
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

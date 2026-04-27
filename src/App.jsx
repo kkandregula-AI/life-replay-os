@@ -260,6 +260,37 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .import-summary{background:rgba(62,207,108,.06);border:1px solid rgba(62,207,108,.18);border-radius:10px;padding:14px 18px;margin-top:12px}
 .import-summary-title{font-family:'Cinzel',serif;font-size:11px;color:var(--green);letter-spacing:.06em;margin-bottom:5px}
 
+/* ── API KEY SETUP SCREEN ── */
+.setup-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.setup-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:40px 36px;width:100%;max-width:480px;box-shadow:0 32px 80px rgba(0,0,0,.7);animation:slideUp .4s ease}
+.setup-logo{font-family:'Cinzel',serif;font-size:13px;font-weight:700;letter-spacing:.2em;color:var(--gold2);text-transform:uppercase;margin-bottom:6px}
+.setup-tagline{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.1em;margin-bottom:28px}
+.setup-icon{font-size:42px;margin-bottom:16px;display:block}
+.setup-title{font-family:'Cinzel',serif;font-size:20px;font-weight:600;color:var(--text);letter-spacing:.04em;margin-bottom:8px}
+.setup-desc{font-size:14px;color:var(--text-dim);line-height:1.6;margin-bottom:24px;font-style:italic}
+.setup-label{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:7px;display:block}
+.setup-input-wrap{position:relative;margin-bottom:10px}
+.setup-input{width:100%;background:var(--card);border:1px solid rgba(201,153,58,.2);border-radius:9px;padding:12px 44px 12px 14px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;letter-spacing:.04em;transition:border-color .2s}
+.setup-input:focus{border-color:rgba(201,153,58,.5)}
+.setup-input::placeholder{color:var(--text-muted);letter-spacing:.02em;font-size:11px}
+.setup-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:4px;transition:color .15s}
+.setup-eye:hover{color:var(--gold)}
+.setup-hint{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:22px;line-height:1.5}
+.setup-hint a{color:var(--gold-dim);text-decoration:none}
+.setup-hint a:hover{color:var(--gold)}
+.setup-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:24px}
+.setup-step{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;background:var(--card);border-radius:8px;border:1px solid var(--border)}
+.setup-step-num{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--gold);background:rgba(201,153,58,.1);border-radius:4px;padding:2px 6px;flex-shrink:0;margin-top:1px}
+.setup-step-text{font-size:12.5px;color:var(--text-dim);line-height:1.5}
+.setup-step-text strong{color:var(--text)}
+.setup-security{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(62,207,108,.04);border:1px solid rgba(62,207,108,.12);border-radius:8px;margin-bottom:20px;font-size:12px;color:rgba(62,207,108,.8)}
+
+/* ── KEY STATUS (top-right of app) ── */
+.key-status-btn{position:fixed;top:14px;right:16px;z-index:50;display:flex;align-items:center;gap:6px;padding:5px 11px;background:var(--surface);border:1px solid var(--border);border-radius:20px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.07em;color:var(--text-muted);transition:all .18s}
+.key-status-btn:hover{border-color:rgba(201,153,58,.3);color:var(--gold);background:var(--card)}
+.key-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.key-dot.missing{background:var(--red)}
+
 /* ── PRE-MORTEM ── */
 .pm-hero{background:linear-gradient(135deg,rgba(30,8,8,.95) 0%,rgba(16,18,28,.9) 100%);border:1px solid rgba(224,92,92,.2);border-radius:14px;padding:22px 26px;margin-bottom:20px;position:relative;overflow:hidden}
 .pm-hero::before{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;background:radial-gradient(circle,rgba(224,92,92,.08) 0%,transparent 70%);pointer-events:none}
@@ -332,12 +363,25 @@ const NAV = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API HELPERS  (all go through /api/claude — key stays server-side)
+// API KEY STORAGE  (persisted in localStorage, sent as header — never in source)
+// ─────────────────────────────────────────────────────────────────────────────
+const KEY_STORAGE = "lros_api_key";
+const getStoredKey = () => { try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; } };
+const saveKey      = (k) => { try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch {} };
+const clearKey     = ()  => { try { localStorage.removeItem(KEY_STORAGE); } catch {} };
+
+function apiHeaders() {
+  const k = getStoredKey();
+  return { "Content-Type": "application/json", ...(k ? { "x-user-api-key": k } : {}) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API HELPERS  (all go through /api/claude — key sent as header, never hardcoded)
 // ─────────────────────────────────────────────────────────────────────────────
 async function callClaude(system, userMsg, maxTokens = 1200) {
   const resp = await fetch("/api/claude", {
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers: apiHeaders(),
     body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens: maxTokens, system, messages:[{role:"user",content:userMsg}] }),
   });
   const data = await resp.json();
@@ -353,7 +397,7 @@ async function callClaudeJSON(system, userMsg, maxTokens = 2000) {
 async function callClaudeWithDoc(system, userMsg, base64Data, mediaType) {
   const resp = await fetch("/api/claude", {
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers: apiHeaders(),
     body: JSON.stringify({
       model:"claude-sonnet-4-20250514", max_tokens:2000, system,
       messages:[{role:"user",content:[
@@ -370,7 +414,7 @@ async function callClaudeWithDoc(system, userMsg, base64Data, mediaType) {
 async function callClaudeWithGmail(keywords) {
   const resp = await fetch("/api/claude", {
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers: apiHeaders(),
     body: JSON.stringify({
       model:"claude-sonnet-4-20250514", max_tokens:3000,
       mcp_servers:[{type:"url",url:"https://gmailmcp.googleapis.com/mcp/v1",name:"gmail-mcp"}],
@@ -392,7 +436,206 @@ function memoriesContext(memories) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED COMPONENTS
+// API KEY SETUP SCREEN  (shown on first launch, persists to localStorage)
+// ─────────────────────────────────────────────────────────────────────────────
+function SetupScreen({ onKeySet }) {
+  const [key, setKey]         = useState("");
+  const [show, setShow]       = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [error, setError]     = useState("");
+
+  const testAndSave = async () => {
+    const trimmed = key.trim();
+    if (!trimmed.startsWith("sk-ant-")) {
+      setError("Key should start with sk-ant-  — check you copied it fully.");
+      return;
+    }
+    setTesting(true); setError("");
+    try {
+      // Quick validation call
+      const resp = await fetch("/api/claude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-api-key": trimmed },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 10,
+          messages: [{ role: "user", content: "Hi" }],
+        }),
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message || data.error);
+      saveKey(trimmed);
+      onKeySet(trimmed);
+    } catch(e) {
+      setError("Key test failed: " + e.message + ". Please check the key and try again.");
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="setup-overlay">
+      <div className="setup-card">
+        {/* Brand */}
+        <div className="setup-logo">Life Replay OS</div>
+        <div className="setup-tagline">DECISION INTELLIGENCE SYSTEM · v3.0</div>
+
+        <span className="setup-icon">🧠</span>
+        <div className="setup-title">Connect Your AI Brain</div>
+        <div className="setup-desc">
+          This app uses Claude AI to replay your past decisions, detect blindspots, and simulate futures.
+          Enter your Anthropic API key — it's stored only on this device and sent securely with every request.
+        </div>
+
+        {/* Steps */}
+        <div className="setup-steps">
+          <div className="setup-step">
+            <span className="setup-step-num">01</span>
+            <div className="setup-step-text">Go to <strong>console.anthropic.com</strong> → API Keys → Create Key</div>
+          </div>
+          <div className="setup-step">
+            <span className="setup-step-num">02</span>
+            <div className="setup-step-text">Copy the key that starts with <strong>sk-ant-api03-...</strong></div>
+          </div>
+          <div className="setup-step">
+            <span className="setup-step-num">03</span>
+            <div className="setup-step-text">Paste it below — the app validates it once, then remembers it forever</div>
+          </div>
+        </div>
+
+        {/* Input */}
+        <label className="setup-label">Your Anthropic API Key</label>
+        <div className="setup-input-wrap">
+          <input
+            className="setup-input"
+            type={show ? "text" : "password"}
+            placeholder="sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx..."
+            value={key}
+            onChange={e => { setKey(e.target.value); setError(""); }}
+            onKeyDown={e => e.key === "Enter" && testAndSave()}
+            autoComplete="off"
+            spellCheck="false"
+          />
+          <button className="setup-eye" onClick={() => setShow(s => !s)} title="Toggle visibility">
+            {show ? "🙈" : "👁"}
+          </button>
+        </div>
+
+        <div className="setup-hint">
+          Free tier available at{" "}
+          <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">console.anthropic.com</a>
+          {" "}· ~$0.003 per typical conversation
+        </div>
+
+        {/* Security note */}
+        <div className="setup-security">
+          🔐 Key stored in your browser's localStorage only. Never sent to any server except Anthropic.
+        </div>
+
+        {error && (
+          <div style={{color:"var(--red)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",padding:"10px 14px",background:"rgba(224,92,92,.08)",borderRadius:"8px",border:"1px solid rgba(224,92,92,.2)",marginBottom:"16px"}}>
+            {error}
+          </div>
+        )}
+
+        <button
+          className="btn-primary"
+          style={{width:"100%",padding:"12px",fontSize:"11px"}}
+          onClick={testAndSave}
+          disabled={!key.trim() || testing}
+        >
+          {testing ? "Validating Key..." : "Activate Life Replay OS →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANGE KEY MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function KeyModal({ currentKey, onClose, onKeyUpdated }) {
+  const [key, setKey]         = useState("");
+  const [show, setShow]       = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [error, setError]     = useState("");
+
+  const masked = currentKey ? "sk-ant-..." + currentKey.slice(-6) : "Not set";
+
+  const testAndUpdate = async () => {
+    const trimmed = key.trim();
+    if (!trimmed.startsWith("sk-ant-")) {
+      setError("Key should start with sk-ant-");
+      return;
+    }
+    setTesting(true); setError("");
+    try {
+      const resp = await fetch("/api/claude", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-user-api-key":trimmed},
+        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:10, messages:[{role:"user",content:"Hi"}] }),
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error.message || data.error);
+      saveKey(trimmed);
+      onKeyUpdated(trimmed);
+      onClose();
+    } catch(e) { setError("Validation failed: " + e.message); }
+    finally { setTesting(false); }
+  };
+
+  const handleClear = () => { clearKey(); onKeyUpdated(""); onClose(); };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:"440px"}} onClick={e => e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px"}}>
+          <div className="modal-title" style={{marginBottom:0}}>⚙ API Key Settings</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"var(--text-dim)",cursor:"pointer",fontSize:"18px"}}>✕</button>
+        </div>
+
+        {/* Current key status */}
+        <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"9px",padding:"12px 16px",marginBottom:"18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:"4px"}}>Current Key</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"11px",color:"var(--green)"}}>{masked}</div>
+          </div>
+          <div style={{width:"8px",height:"8px",borderRadius:"50%",background:currentKey?"var(--green)":"var(--red)"}}/>
+        </div>
+
+        <label className="setup-label">New API Key</label>
+        <div className="setup-input-wrap" style={{marginBottom:"8px"}}>
+          <input
+            className="setup-input"
+            type={show?"text":"password"}
+            placeholder="sk-ant-api03-..."
+            value={key}
+            onChange={e=>{setKey(e.target.value);setError("");}}
+            onKeyDown={e=>e.key==="Enter"&&testAndUpdate()}
+            autoComplete="off" spellCheck="false"
+          />
+          <button className="setup-eye" onClick={()=>setShow(s=>!s)}>{show?"🙈":"👁"}</button>
+        </div>
+
+        {error && (
+          <div style={{color:"var(--red)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",padding:"9px 12px",background:"rgba(224,92,92,.08)",borderRadius:"7px",border:"1px solid rgba(224,92,92,.2)",marginBottom:"14px"}}>
+            {error}
+          </div>
+        )}
+
+        <div className="modal-actions" style={{justifyContent:"space-between"}}>
+          <button className="btn-sec" style={{color:"var(--red)",borderColor:"rgba(224,92,92,.2)",fontSize:"9px"}} onClick={handleClear}>
+            Clear Key
+          </button>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button className="btn-sec" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={testAndUpdate} disabled={!key.trim()||testing}>
+              {testing ? "Validating..." : "Update Key"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 function Spinner({ color="gold" }) {
   return (
@@ -1036,14 +1279,24 @@ export default function App() {
   const [activeView,  setActiveView]  = useState("dashboard");
   const [showCapture, setShowCapture] = useState(false);
   const [collapsed,   setCollapsed]   = useState(false);
+  const [apiKey,      setApiKey]      = useState(() => getStoredKey());
+  const [showKeyModal,setShowKeyModal]= useState(false);
 
   const addMemory = useCallback(m => setMemories(prev => [{...m, id:`m${Date.now()}`}, ...prev]), []);
 
-  // Auto-collapse when a view is selected (gives max space to content)
-  const handleNav = (id) => {
-    setActiveView(id);
-    setCollapsed(true);
-  };
+  const handleNav = (id) => { setActiveView(id); setCollapsed(true); };
+
+  const handleKeySet = (k) => setApiKey(k);
+
+  // First-launch: no key stored → show setup screen
+  if (!apiKey) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <SetupScreen onKeySet={handleKeySet}/>
+      </>
+    );
+  }
 
   const renderView = () => {
     switch(activeView) {
@@ -1073,40 +1326,27 @@ export default function App() {
 
         {/* ── SIDEBAR ── */}
         <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
-
-          {/* Logo + toggle */}
           <div className="sb-logo">
             <div className="sb-logo-text">
               <h1>Life Replay OS</h1>
               <p>Decision Intelligence</p>
               <div className="sb-badge">v3.0 · New Intelligence</div>
             </div>
-            <button
-              className="sb-toggle"
-              onClick={() => setCollapsed(c => !c)}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
+            <button className="sb-toggle" onClick={() => setCollapsed(c => !c)} title={collapsed?"Expand":"Collapse"}>
               {collapsed ? "▶" : "◀"}
             </button>
           </div>
-
-          {/* Nav */}
           <nav className="sb-nav">
             {NAV.map((item, i) =>
               item.section ? (
                 <div key={i} className="sb-section">
                   {item.section}
-                  {item.isNew && (
-                    <span style={{marginLeft:"6px",background:"rgba(249,115,22,.2)",color:"var(--orange)",border:"1px solid rgba(249,115,22,.3)",borderRadius:"3px",padding:"1px 5px",fontSize:"7px",fontFamily:"'JetBrains Mono',monospace"}}>NEW</span>
-                  )}
+                  {item.isNew && <span style={{marginLeft:"6px",background:"rgba(249,115,22,.2)",color:"var(--orange)",border:"1px solid rgba(249,115,22,.3)",borderRadius:"3px",padding:"1px 5px",fontSize:"7px",fontFamily:"'JetBrains Mono',monospace"}}>NEW</span>}
                 </div>
               ) : (
-                <div
-                  key={item.id}
-                  data-label={item.label}
+                <div key={item.id} data-label={item.label}
                   className={`nav-item${activeTheme(item)}`}
-                  onClick={() => handleNav(item.id)}
-                >
+                  onClick={() => handleNav(item.id)}>
                   <span className="nav-icon">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
                   {item.isNew && <span className="nav-new">NEW</span>}
@@ -1114,14 +1354,9 @@ export default function App() {
               )
             )}
           </nav>
-
-          {/* Footer */}
           <div className="sb-footer">
             <div className="mem-count"><span>{memories.length}</span> memories indexed</div>
-            <button
-              className="add-mem-btn"
-              onClick={() => { setShowCapture(true); setCollapsed(true); }}
-            >
+            <button className="add-mem-btn" onClick={() => { setShowCapture(true); setCollapsed(true); }}>
               {collapsed ? "+" : "+ Capture Memory"}
             </button>
           </div>
@@ -1131,11 +1366,19 @@ export default function App() {
         <main className="main">{renderView()}</main>
       </div>
 
+      {/* ── KEY STATUS PILL (always visible top-right) ── */}
+      <button className="key-status-btn" onClick={() => setShowKeyModal(true)} title="API Key Settings">
+        <div className={`key-dot${apiKey ? "" : " missing"}`}/>
+        {apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
+        <span style={{opacity:.5}}>⚙</span>
+      </button>
+
+      {/* ── MODALS ── */}
       {showCapture && (
-        <CaptureModal
-          onClose={() => setShowCapture(false)}
-          onSave={m => { addMemory(m); setShowCapture(false); }}
-        />
+        <CaptureModal onClose={() => setShowCapture(false)} onSave={m => { addMemory(m); setShowCapture(false); }}/>
+      )}
+      {showKeyModal && (
+        <KeyModal currentKey={apiKey} onClose={() => setShowKeyModal(false)} onKeyUpdated={(k) => { setApiKey(k); if (!k) setApiKey(""); }}/>
       )}
     </>
   );
