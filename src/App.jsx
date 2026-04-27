@@ -85,14 +85,16 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .sidebar.collapsed .add-mem-btn{font-size:16px;letter-spacing:0;padding:8px 0;margin-top:8px}
 
 /* ── MAIN ── */
-.main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg);transition:all .28s cubic-bezier(.4,0,.2,1)}
-.view-header{padding:24px 28px 0;display:flex;align-items:flex-start;justify-content:space-between}
+.main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg);transition:all .28s cubic-bezier(.4,0,.2,1);min-width:0}
+.view-header{padding:24px 20px 0;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px}
 .view-title{font-family:'Cinzel',serif;font-size:20px;font-weight:600;letter-spacing:.05em;color:var(--text)}
 .view-subtitle{font-size:13px;color:var(--text-dim);margin-top:3px;font-style:italic}
-.view-body{padding:18px 28px 40px}
+.view-body{padding:18px 20px 40px}
 
 /* ── STATS ── */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+@media(max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:400px){.stats-grid{grid-template-columns:1fr 1fr}}
 .stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 18px}
 .stat-val{font-family:'Cinzel',serif;font-size:26px;font-weight:600;color:var(--gold2)}
 .stat-lbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
@@ -100,6 +102,7 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 
 /* ── QUICK GRID ── */
 .quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+@media(max-width:700px){.quick-grid{grid-template-columns:repeat(2,1fr);}}
 .qa-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .2s;text-align:left;color:var(--text)}
 .qa-btn:hover{border-color:rgba(201,153,58,.28);background:var(--card2);transform:translateY(-1px);box-shadow:var(--shadow)}
 .qa-btn.qa-red:hover{border-color:rgba(224,92,92,.3)}
@@ -113,6 +116,7 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 /* ── SECTION ── */
 .section-title{font-family:'Cinzel',serif;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--gold);text-transform:uppercase;margin-bottom:12px}
 .two-col{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr!important}}
 .recent-list{display:flex;flex-direction:column;gap:8px}
 .recent-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:9px;cursor:pointer;transition:all .18s}
 .recent-item:hover{border-color:rgba(201,153,58,.22);background:var(--card2)}
@@ -191,6 +195,7 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 
 /* ── SIM GRID ── */
 .sim-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:600px){.sim-grid{grid-template-columns:1fr!important}}
 .option-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:16px}
 .option-label{font-family:'Cinzel',serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
 .option-a .option-label{color:#5b9cf6}.option-b .option-label{color:#3ecf6c}
@@ -203,8 +208,8 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .legend-dot{width:8px;height:8px;border-radius:50%}
 
 /* ── MODAL ── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:540px;max-height:87vh;overflow-y:auto;animation:slideUp .3s ease;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:100;padding:12px}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(540px,100%);max-height:87vh;overflow-y:auto;animation:slideUp .3s ease;box-shadow:0 24px 64px rgba(0,0,0,.6)}
 @keyframes slideUp{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .modal-title{font-family:'Cinzel',serif;font-size:16px;font-weight:600;color:var(--gold2);margin-bottom:20px;letter-spacing:.04em}
 .fg{margin-bottom:14px}
@@ -214,6 +219,7 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .fs option{background:var(--card)}
 .fta{resize:vertical;min-height:60px;line-height:1.5}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+@media(max-width:500px){.fr{grid-template-columns:1fr!important}}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
 .outcome-selector{display:flex;gap:8px}
 .outcome-opt{flex:1;padding:8px;border-radius:7px;border:1px solid var(--border);background:var(--card);cursor:pointer;text-align:center;font-size:13px;transition:all .15s;color:var(--text-dim)}
@@ -313,6 +319,7 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 
 /* ── INSIGHT CARDS (Blindspot) ── */
 .bs-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:18px}
+@media(max-width:600px){.bs-cards{grid-template-columns:1fr!important}}
 .bs-card{background:var(--card2);border-radius:11px;padding:18px;border:1px solid var(--border);position:relative;overflow:hidden}
 .bs-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
 .bs-card.bc-red::before{background:linear-gradient(90deg,#e05c5c,transparent)}
@@ -442,6 +449,13 @@ function apiHeaders() {
 // ─────────────────────────────────────────────────────────────────────────────
 // API HELPERS  (all go through /api/claude — key sent as header, never hardcoded)
 // ─────────────────────────────────────────────────────────────────────────────
+function errMsg(e) {
+  if (!e) return "Unknown error";
+  if (typeof e === "string") return e;
+  if (e.message) return e.message;
+  return JSON.stringify(e);
+}
+
 async function callClaude(system, userMsg, maxTokens = 1200) {
   const resp = await fetch("/api/claude", {
     method:"POST",
@@ -449,7 +463,7 @@ async function callClaude(system, userMsg, maxTokens = 1200) {
     body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens: maxTokens, system, messages:[{role:"user",content:userMsg}] }),
   });
   const data = await resp.json();
-  if (data.error) throw new Error(data.error.message || data.error);
+  if (data.error) throw new Error(errMsg(data.error));
   return data.content[0].text;
 }
 
@@ -471,7 +485,7 @@ async function callClaudeWithDoc(system, userMsg, base64Data, mediaType) {
     }),
   });
   const data = await resp.json();
-  if (data.error) throw new Error(data.error.message || data.error);
+  if (data.error) throw new Error(errMsg(data.error));
   return data.content[0].text;
 }
 
@@ -507,11 +521,17 @@ Extract each important email as a life memory. Return only the JSON array.`
 
   if (!resp.ok) {
     const err = await resp.json().catch(()=>({}));
-    throw new Error(err.error || `Server error ${resp.status}`);
+    const msg = typeof err.error === "string" ? err.error
+      : err.error?.message || JSON.stringify(err.error) || `Server error ${resp.status}`;
+    throw new Error(msg);
   }
 
   const data = await resp.json();
-  if (data.error) throw new Error(data.error.message || data.error);
+  if (data.error) {
+    const msg = typeof data.error === "string" ? data.error
+      : data.error?.message || JSON.stringify(data.error);
+    throw new Error(msg);
+  }
 
   // Find text content in response (may include tool_use blocks)
   const textBlock = data.content?.find(b => b.type === "text");
@@ -1197,8 +1217,41 @@ function ImportHubView({ onImport }) {
     try{
       const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
       setProgress(50);
-      const sys=`Extract every career role from this resume as life memories. Return ONLY valid JSON array: [{"title":"Job at Company","date":"YYYY-MM-DD","category":"career","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":4}]`;
-      const raw=await callClaudeWithDoc(sys,"Extract all career events. Return only JSON array.",base64,"application/pdf");
+      const sys = `You are a life intelligence extractor reading a resume/CV. Your job is to extract the COMPLETE picture of this person — not just job titles, but who they are, what decisions they made, what shaped them.
+
+Extract ALL of the following as separate life memory entries:
+
+1. EVERY work role / position (including internships, freelance, consulting)
+2. EVERY educational qualification (degree, diploma, certification, course)
+3. EVERY major achievement or recognition (award, promotion, publication, patent)
+4. EVERY career transition or pivot (why they changed fields, companies)
+5. Key skills developed at each stage — treat as a "learning" memory
+
+For EACH entry, deeply infer:
+- situation: What was happening in their life/career at that point? What challenge or opportunity existed?
+- decision: What did they choose to do?
+- outcomeDetail: What did this lead to? What did they achieve? Use real details from the resume.
+- learned: What insight or capability did this build in them as a person?
+
+Return ONLY a valid JSON array — no markdown, no explanation:
+[{
+  "title": "Descriptive title (Role at Company / Degree at Institution / Achievement)",
+  "date": "YYYY-MM-DD",
+  "category": "career|learning|other",
+  "situation": "Rich context about this period of their life",
+  "decision": "The choice they made",
+  "outcome": "positive|negative|mixed",
+  "outcomeDetail": "Specific results, duration, achievements from resume",
+  "learned": "The deep personal/professional insight this built",
+  "tags": ["skill1","domain"],
+  "stress": 4
+}]
+
+Extract 8-20 entries. Be rich and specific. This becomes their personal AI memory bank — generic entries are useless.`;
+
+      const raw = await callClaudeWithDoc(sys,
+        "Read this resume completely. Extract every role, degree, certification, achievement and career transition as rich life memories. Return only JSON array.",
+        base64, "application/pdf");
       setProgress(85);const items=parseItems(raw);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);
     }catch(e){setError("Extraction failed: "+e.message);}finally{setLoading(false);}
   };
