@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
@@ -370,6 +370,55 @@ const getStoredKey = () => { try { return localStorage.getItem(KEY_STORAGE) || "
 const saveKey      = (k) => { try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch {} };
 const clearKey     = ()  => { try { localStorage.removeItem(KEY_STORAGE); } catch {} };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GMAIL OAUTH STORAGE
+// ─────────────────────────────────────────────────────────────────────────────
+const GMAIL_TOKEN_KEY   = "lros_gmail_token";
+const GMAIL_REFRESH_KEY = "lros_gmail_refresh";
+const GMAIL_EXPIRY_KEY  = "lros_gmail_expiry";
+
+const getGmailToken   = () => { try { return localStorage.getItem(GMAIL_TOKEN_KEY) || ""; } catch { return ""; } };
+const getGmailRefresh = () => { try { return localStorage.getItem(GMAIL_REFRESH_KEY) || ""; } catch { return ""; } };
+const getGmailExpiry  = () => { try { return Number(localStorage.getItem(GMAIL_EXPIRY_KEY)) || 0; } catch { return 0; } };
+
+const saveGmailTokens = ({ access_token, refresh_token, expires_in }) => {
+  try {
+    localStorage.setItem(GMAIL_TOKEN_KEY,   access_token);
+    if (refresh_token) localStorage.setItem(GMAIL_REFRESH_KEY, refresh_token);
+    localStorage.setItem(GMAIL_EXPIRY_KEY, String(Date.now() + expires_in * 1000));
+  } catch {}
+};
+
+const clearGmailTokens = () => {
+  try {
+    localStorage.removeItem(GMAIL_TOKEN_KEY);
+    localStorage.removeItem(GMAIL_REFRESH_KEY);
+    localStorage.removeItem(GMAIL_EXPIRY_KEY);
+  } catch {}
+};
+
+const isGmailConnected = () => Boolean(getGmailToken());
+
+// Refresh token if expired (within 5 min of expiry)
+const getFreshGmailToken = async () => {
+  const expiry = getGmailExpiry();
+  if (expiry && Date.now() < expiry - 5 * 60 * 1000) return getGmailToken();
+  const refresh = getGmailRefresh();
+  if (!refresh) return "";
+  try {
+    const resp = await fetch("/api/auth/refresh", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    const data = await resp.json();
+    if (data.access_token) {
+      saveGmailTokens({ access_token: data.access_token, expires_in: data.expires_in });
+      return data.access_token;
+    }
+  } catch {}
+  return getGmailToken();
+};
+
 function apiHeaders() {
   const k = getStoredKey();
   return { "Content-Type": "application/json", ...(k ? { "x-user-api-key": k } : {}) };
@@ -412,12 +461,20 @@ async function callClaudeWithDoc(system, userMsg, base64Data, mediaType) {
 }
 
 async function callClaudeWithGmail(keywords) {
+  const token = await getFreshGmailToken();
+  if (!token) throw new Error("Gmail not connected. Please connect your Google account first.");
+
   const resp = await fetch("/api/claude", {
     method:"POST",
     headers: apiHeaders(),
     body: JSON.stringify({
       model:"claude-sonnet-4-20250514", max_tokens:3000,
-      mcp_servers:[{type:"url",url:"https://gmailmcp.googleapis.com/mcp/v1",name:"gmail-mcp"}],
+      mcp_servers:[{
+        type:"url",
+        url:"https://gmailmcp.googleapis.com/mcp/v1",
+        name:"gmail-mcp",
+        authorization_token: token,
+      }],
       system:`You are a life event extractor. Search Gmail for keywords. Return ONLY a JSON array:
 [{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]`,
       messages:[{role:"user",content:`Search Gmail for: ${keywords.join(", ")}. Find offer letters, loans, approvals, financial statements, medical. Return JSON array only.`}],
@@ -1045,13 +1102,47 @@ function ImportHubView({ onImport }) {
   const [pasteText,setPasteText]=useState("");
   const [dragOver,setDragOver]=useState(false);
   const [gmailKeywords,setGmailKeywords]=useState(new Set(["offer letter","loan","salary","investment","job"]));
+  const [gmailConnected, setGmailConnected] = useState(isGmailConnected);
+  const [connectingGmail, setConnectingGmail] = useState(false);
   const fileRef=useRef();
   const ALL_KEYWORDS=["offer letter","loan","salary","investment","job","rejection","approval","insurance","promotion","contract","medical","visa","resignation","admission"];
   const reset=()=>{setExtracted([]);setSelected(new Set());setError("");setSuccess("");setProgress(0);};
   const toggleKw=k=>setGmailKeywords(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});
   const toggleSel=i=>setSelected(p=>{const n=new Set(p);n.has(i)?n.delete(i):n.add(i);return n;});
   const parseItems=raw=>{const c=raw.replace(/```json|```/g,"").trim();const p=JSON.parse(c);return Array.isArray(p)?p:[p];};
-  const handleFile=async file=>{
+
+  // Kick off Google OAuth — get auth URL from server, redirect
+  const handleGmailConnect = async () => {
+    setConnectingGmail(true);
+    try {
+      const resp = await fetch("/api/auth/google");
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      window.location.href = data.url; // redirect to Google login
+    } catch(e) {
+      setError("Could not start Gmail login: " + e.message);
+      setConnectingGmail(false);
+    }
+  };
+
+  // Real Gmail scan using OAuth token
+  const handleGmailScan = async () => {
+    if (gmailKeywords.size===0) return;
+    reset(); setLoading(true); setProgress(20);
+    try {
+      setProgress(45);
+      const items = await callClaudeWithGmail([...gmailKeywords]);
+      setProgress(85);
+      setExtracted(items);
+      setSelected(new Set(items.map((_,i)=>i)));
+      setProgress(100);
+    } catch(e) {
+      if (e.message.includes("not connected")) {
+        setGmailConnected(false); clearGmailTokens();
+      }
+      setError("Gmail scan failed: " + e.message);
+    } finally { setLoading(false); }
+  };
     if(!file) return; reset(); setLoading(true); setProgress(20);
     try{
       const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
@@ -1061,6 +1152,7 @@ function ImportHubView({ onImport }) {
       setProgress(85);const items=parseItems(raw);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);
     }catch(e){setError("Extraction failed: "+e.message);}finally{setLoading(false);}
   };
+
   const handlePaste=async()=>{
     if(!pasteText.trim()) return; reset(); setLoading(true); setProgress(30);
     try{
@@ -1069,25 +1161,144 @@ function ImportHubView({ onImport }) {
       setProgress(85);const items=parseItems(raw);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);
     }catch(e){setError("Extraction failed: "+e.message);}finally{setLoading(false);}
   };
-  const handleGmail=async()=>{
-    if(gmailKeywords.size===0) return; reset(); setLoading(true); setProgress(20);
-    try{setProgress(45);const items=await callClaudeWithGmail([...gmailKeywords]);setProgress(85);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);}
-    catch(e){setError("Gmail scan failed: "+e.message);}finally{setLoading(false);}
+
+  // Gmail: build a search URL for the selected keywords, open in browser
+  // User copies email text, pastes into Paste tab — no OAuth needed
+  const gmailSearchUrl = () => {
+    const q = [...gmailKeywords].join(" OR ");
+    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
   };
+
   const importSelected=()=>{extracted.filter((_,i)=>selected.has(i)).forEach(m=>onImport(m));setSuccess(`${selected.size} memories imported.`);setExtracted([]);setSelected(new Set());};
-  const TABS=[{id:"resume",icon:"📄",label:"Resume / CV"},{id:"paste",icon:"✉️",label:"Paste Document"},{id:"gmail",icon:"📧",label:"Gmail Scan"}];
+  const TABS=[{id:"resume",icon:"📄",label:"Resume / CV"},{id:"paste",icon:"✉️",label:"Paste Document"},{id:"gmail",icon:"📧",label:"Gmail Import"}];
+
   return (
     <div>
       <div className="view-header"><div><div className="view-title">Import Hub</div><div className="view-subtitle">Auto-extract life memories from documents and inbox</div></div></div>
       <div className="view-body">
         <div className="import-tabs">{TABS.map(t=><div key={t.id} className={`itab${tab===t.id?" active":""}`} onClick={()=>{setTab(t.id);reset();}}><span style={{fontSize:"16px",display:"block",marginBottom:"4px"}}>{t.icon}</span>{t.label}</div>)}</div>
-        {tab==="resume"&&(<div><div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude extracts every role as a dated memory.</div><div className={`drop-zone${dragOver?" drag-over":""}`} onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}><div className="drop-icon">📄</div><div className="drop-title">Drop your Resume PDF here</div><div className="drop-desc">or click to browse</div><input ref={fileRef} className="file-input" type="file" accept=".pdf" onChange={e=>handleFile(e.target.files[0])}/></div></div>)}
-        {tab==="paste"&&(<div><div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>Paste any <strong style={{color:"var(--text)"}}>email or document text</strong> — loan letters, job offers, investment confirmations.</div><textarea className="ai-textarea" rows={10} placeholder={"Paste email or document text here..."} value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{marginBottom:"12px",minHeight:"200px"}}/><button className="btn-primary" onClick={handlePaste} disabled={!pasteText.trim()||loading}>{loading?"Extracting...":"Extract Memories →"}</button></div>)}
-        {tab==="gmail"&&(<div><div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px"}}><div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}><span className="gmail-pill gmail-connected">● Gmail Connected</span></div><div style={{fontSize:"13px",color:"var(--text-dim)"}}>Claude scans your Gmail for selected keywords and extracts life events.</div></div><div className="keyword-chips">{ALL_KEYWORDS.map(k=><div key={k} className={`kchip${gmailKeywords.has(k)?" active":""}`} onClick={()=>toggleKw(k)}>{k}</div>)}</div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",margin:"10px 0"}}>{gmailKeywords.size} keywords selected</div><button className="btn-primary" onClick={handleGmail} disabled={gmailKeywords.size===0||loading}>{loading?"Scanning Inbox...":"Scan Gmail →"}</button></div>)}
-        {loading&&(<div style={{marginTop:"20px"}}><div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{tab==="resume"?"Parsing resume...":tab==="paste"?"Extracting events...":"Scanning Gmail..."}</div></div>)}
+
+        {/* ── RESUME TAB ── */}
+        {tab==="resume"&&(
+          <div>
+            <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
+              Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude extracts every role as a dated memory.
+            </div>
+            <div className={`drop-zone${dragOver?" drag-over":""}`} onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}>
+              <div className="drop-icon">📄</div>
+              <div className="drop-title">Drop your Resume PDF here</div>
+              <div className="drop-desc">or click to browse</div>
+              <input ref={fileRef} className="file-input" type="file" accept=".pdf" onChange={e=>handleFile(e.target.files[0])}/>
+            </div>
+          </div>
+        )}
+
+        {/* ── PASTE TAB ── */}
+        {tab==="paste"&&(
+          <div>
+            <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
+              Paste any <strong style={{color:"var(--text)"}}>email or document text</strong> — loan letters, job offers, investment confirmations.
+            </div>
+            <textarea className="ai-textarea" rows={10} placeholder={"Paste email or document text here...\n\nExample:\nDear Krishnamurthy,\nWe are pleased to confirm your home loan of ₹45,00,000 approved on 15 March 2023..."} value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{marginBottom:"12px",minHeight:"200px"}}/>
+            <button className="btn-primary" onClick={handlePaste} disabled={!pasteText.trim()||loading}>{loading?"Extracting...":"Extract Memories →"}</button>
+          </div>
+        )}
+
+        {/* ── GMAIL TAB — Real OAuth ── */}
+        {tab==="gmail"&&(
+          <div>
+            {gmailConnected ? (
+              /* ── CONNECTED STATE ── */
+              <div>
+                <div style={{background:"rgba(62,207,108,.05)",border:"1px solid rgba(62,207,108,.2)",borderRadius:"11px",padding:"14px 18px",marginBottom:"18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                    <span style={{fontSize:"18px"}}>📧</span>
+                    <div>
+                      <div style={{fontFamily:"'Cinzel',serif",fontSize:"11px",color:"var(--green)",letterSpacing:".06em"}}>Gmail Connected</div>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",marginTop:"2px"}}>OAuth authenticated · inbox scan enabled</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>{clearGmailTokens();setGmailConnected(false);reset();}}
+                    style={{background:"none",border:"1px solid rgba(224,92,92,.2)",borderRadius:"6px",padding:"4px 10px",color:"rgba(224,92,92,.6)",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",cursor:"pointer"}}>
+                    Disconnect
+                  </button>
+                </div>
+
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8.5px",color:"var(--text-muted)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:"8px"}}>Select keywords to scan for</div>
+                <div className="keyword-chips" style={{marginBottom:"14px"}}>
+                  {ALL_KEYWORDS.map(k=><div key={k} className={`kchip${gmailKeywords.has(k)?" active":""}`} onClick={()=>toggleKw(k)}>{k}</div>)}
+                </div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",marginBottom:"16px"}}>{gmailKeywords.size} keywords selected</div>
+                <button className="btn-primary" onClick={handleGmailScan} disabled={gmailKeywords.size===0||loading}>
+                  {loading ? "Scanning Inbox..." : `Scan Gmail for ${gmailKeywords.size} Keywords →`}
+                </button>
+              </div>
+            ) : (
+              /* ── CONNECT STATE ── */
+              <div>
+                <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"12px",padding:"24px",textAlign:"center",marginBottom:"16px"}}>
+                  <div style={{fontSize:"36px",marginBottom:"12px"}}>📧</div>
+                  <div style={{fontFamily:"'Cinzel',serif",fontSize:"15px",color:"var(--text)",letterSpacing:".04em",marginBottom:"8px"}}>Connect Your Gmail</div>
+                  <div style={{fontSize:"13px",color:"var(--text-dim)",lineHeight:"1.6",marginBottom:"20px",fontStyle:"italic"}}>
+                    Grant read-only access so Claude can scan your inbox for offer letters, loan approvals, investments, and other life events — and auto-extract them as memories.
+                  </div>
+                  <button className="btn-primary" onClick={handleGmailConnect} disabled={connectingGmail} style={{margin:"0 auto"}}>
+                    {connectingGmail ? "Redirecting to Google..." : "Connect Gmail with Google →"}
+                  </button>
+                </div>
+
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {[
+                    {icon:"🔒", text:"Read-only access — Life Replay OS can never send or delete emails"},
+                    {icon:"🔑", text:"Token stored only in your browser — never on any server"},
+                    {icon:"👤", text:"Only your own account — no third-party data sharing"},
+                  ].map((item,i)=>(
+                    <div key={i} style={{display:"flex",gap:"10px",padding:"10px 14px",background:"var(--card)",borderRadius:"8px",border:"1px solid var(--border)"}}>
+                      <span style={{fontSize:"14px",flexShrink:0}}>{item.icon}</span>
+                      <span style={{fontSize:"12.5px",color:"var(--text-dim)",lineHeight:"1.5"}}>{item.text}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{marginTop:"14px",padding:"10px 14px",background:"rgba(240,180,41,.04)",border:"1px solid rgba(240,180,41,.12)",borderRadius:"8px",fontSize:"11.5px",color:"rgba(240,180,41,.7)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".03em"}}>
+                  ⚠ App is in Google testing mode — only added test users can connect. Make sure your Gmail is listed under OAuth Consent Screen → Test Users.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {loading&&(<div style={{marginTop:"20px"}}><div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{tab==="resume"?"Parsing resume...":"Extracting life events from document..."}</div></div>)}
         {error&&<ErrBox msg={error}/>}
         {success&&<div className="import-summary"><div className="import-summary-title">✦ Import Complete</div><div style={{fontSize:"13px",color:"var(--text-dim)"}}>{success}</div></div>}
-        {extracted.length>0&&!loading&&(<div style={{marginTop:"20px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}><div className="section-title" style={{margin:0}}>{extracted.length} Events Extracted</div><div style={{display:"flex",gap:"8px"}}><button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set(extracted.map((_,i)=>i)))}>All</button><button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set())}>None</button></div></div><div className="extracted-list">{extracted.map((item,i)=>(<div key={i} className="extracted-item" style={{opacity:selected.has(i)?1:.5}}><div className={`ex-check${selected.has(i)?" checked":""}`} onClick={()=>toggleSel(i)}>{selected.has(i)&&"✓"}</div><div style={{flex:1}}><div className="ex-title">{item.title}</div><div className="ex-meta"><span style={{color:CAT_COLORS[item.category]||"#888"}}>{item.category}</span>{" · "}{item.date}{" · "}<span style={{color:OUTCOME_COLORS[item.outcome]}}>{item.outcome}</span></div><div className="ex-desc">{item.situation}</div></div></div>))}</div><div className="import-actions"><button className="btn-primary" onClick={importSelected} disabled={selected.size===0}>Import {selected.size} Selected →</button><button className="btn-sec" onClick={reset}>Clear</button></div></div>)}
+
+        {extracted.length>0&&!loading&&(
+          <div style={{marginTop:"20px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div className="section-title" style={{margin:0}}>{extracted.length} Events Extracted</div>
+              <div style={{display:"flex",gap:"8px"}}>
+                <button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set(extracted.map((_,i)=>i)))}>All</button>
+                <button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set())}>None</button>
+              </div>
+            </div>
+            <div className="extracted-list">
+              {extracted.map((item,i)=>(
+                <div key={i} className="extracted-item" style={{opacity:selected.has(i)?1:.5}}>
+                  <div className={`ex-check${selected.has(i)?" checked":""}`} onClick={()=>toggleSel(i)}>{selected.has(i)&&"✓"}</div>
+                  <div style={{flex:1}}>
+                    <div className="ex-title">{item.title}</div>
+                    <div className="ex-meta"><span style={{color:CAT_COLORS[item.category]||"#888"}}>{item.category}</span>{" · "}{item.date}{" · "}<span style={{color:OUTCOME_COLORS[item.outcome]}}>{item.outcome}</span></div>
+                    <div className="ex-desc">{item.situation}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="import-actions">
+              <button className="btn-primary" onClick={importSelected} disabled={selected.size===0}>Import {selected.size} Selected →</button>
+              <button className="btn-sec" onClick={reset}>Clear</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1281,12 +1492,60 @@ export default function App() {
   const [collapsed,   setCollapsed]   = useState(false);
   const [apiKey,      setApiKey]      = useState(() => getStoredKey());
   const [showKeyModal,setShowKeyModal]= useState(false);
+  const [oauthProcessing, setOauthProcessing] = useState(false);
+  const [oauthError,      setOauthError]      = useState("");
 
   const addMemory = useCallback(m => setMemories(prev => [{...m, id:`m${Date.now()}`}, ...prev]), []);
 
-  const handleNav = (id) => { setActiveView(id); setCollapsed(true); };
+  // ── Handle Google OAuth callback ──────────────────────────────────────────
+  useEffect(() => {
+    const path   = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get("code");
+    const oerr   = params.get("error");
+    if (path !== "/auth/callback") return;
+    // Clean the URL immediately so refresh doesn't re-trigger
+    window.history.replaceState({}, "", "/");
+    if (oerr) { setOauthError("Google login cancelled."); setActiveView("import"); return; }
+    if (!code) return;
+    setOauthProcessing(true);
+    fetch("/api/auth/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        saveGmailTokens(data);
+        setActiveView("import");
+        setCollapsed(false);
+      })
+      .catch(e => setOauthError("Gmail connection failed: " + e.message))
+      .finally(() => setOauthProcessing(false));
+  }, []);
 
+  const handleNav = (id) => { setActiveView(id); setCollapsed(true); };
   const handleKeySet = (k) => setApiKey(k);
+
+  // OAuth processing overlay
+  if (oauthProcessing) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="setup-overlay">
+          <div className="setup-card" style={{textAlign:"center"}}>
+            <div style={{fontSize:"36px",marginBottom:"16px"}}>📧</div>
+            <div className="setup-title">Connecting Gmail...</div>
+            <div style={{fontSize:"13px",color:"var(--text-dim)",marginTop:"8px",fontStyle:"italic"}}>Exchanging authorization code with Google</div>
+            <div className="dots" style={{justifyContent:"center",marginTop:"20px"}}>
+              <div className="dot gold"/><div className="dot gold"/><div className="dot gold"/>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   // First-launch: no key stored → show setup screen
   if (!apiKey) {
@@ -1330,7 +1589,7 @@ export default function App() {
             <div className="sb-logo-text">
               <h1>Life Replay OS</h1>
               <p>Decision Intelligence</p>
-              <div className="sb-badge">v3.0 · New Intelligence</div>
+              <div className="sb-badge">v4.0 · Gmail OAuth</div>
             </div>
             <button className="sb-toggle" onClick={() => setCollapsed(c => !c)} title={collapsed?"Expand":"Collapse"}>
               {collapsed ? "▶" : "◀"}
@@ -1363,7 +1622,15 @@ export default function App() {
         </aside>
 
         {/* ── MAIN CONTENT ── */}
-        <main className="main">{renderView()}</main>
+        <main className="main">
+          {oauthError && (
+            <div style={{margin:"16px 28px 0",padding:"10px 16px",background:"rgba(224,92,92,.08)",border:"1px solid rgba(224,92,92,.2)",borderRadius:"8px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",color:"var(--red)"}}>{oauthError}</span>
+              <button onClick={()=>setOauthError("")} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",fontSize:"14px"}}>✕</button>
+            </div>
+          )}
+          {renderView()}
+        </main>
       </div>
 
       {/* ── KEY STATUS PILL (always visible top-right) ── */}
