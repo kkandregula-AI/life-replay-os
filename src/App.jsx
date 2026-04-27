@@ -456,8 +456,8 @@ function errMsg(e) {
   return JSON.stringify(e);
 }
 
-async function callClaude(system, userMsg, maxTokens = 1200) {
-  const resp = await fetch("/api/claude", {
+async function callClaude(system, userMsg, maxTokens = 1000) {
+  const resp = await fetchWithTimeout("/api/claude", {
     method:"POST",
     headers: apiHeaders(),
     body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens: maxTokens, system, messages:[{role:"user",content:userMsg}] }),
@@ -467,17 +467,17 @@ async function callClaude(system, userMsg, maxTokens = 1200) {
   return data.content[0].text;
 }
 
-async function callClaudeJSON(system, userMsg, maxTokens = 2000) {
+async function callClaudeJSON(system, userMsg, maxTokens = 1500) {
   const text = await callClaude(system, userMsg, maxTokens);
   return JSON.parse(text.replace(/```json|```/g,"").trim());
 }
 
-async function callClaudeWithDoc(system, userMsg, base64Data, mediaType) {
-  const resp = await fetch("/api/claude", {
+async function callClaudeWithDoc(system, userMsg, base64Data, mediaType, maxTokens = 2000) {
+  const resp = await fetchWithTimeout("/api/claude", {
     method:"POST",
     headers: apiHeaders(),
     body: JSON.stringify({
-      model:"claude-sonnet-4-20250514", max_tokens:2000, system,
+      model:"claude-sonnet-4-20250514", max_tokens: maxTokens, system,
       messages:[{role:"user",content:[
         {type:"document",source:{type:"base64",media_type:mediaType,data:base64Data}},
         {type:"text",text:userMsg},
@@ -493,59 +493,168 @@ async function callClaudeWithGmail(keywords) {
   const token = await getFreshGmailToken();
   if (!token) throw new Error("Gmail not connected. Please connect your Google account first.");
 
-  const resp = await fetch("/api/claude", {
-    method:"POST",
-    headers: apiHeaders(),
-    body: JSON.stringify({
-      model:"claude-sonnet-4-20250514",
-      max_tokens: 3000,
-      mcp_servers:[{
-        type: "url",
-        url: "https://gmailmcp.googleapis.com/mcp/v1",
-        name: "gmail-mcp",
-        authorization_token: token,
-      }],
-      system: `You are a life event extractor. Search the user's Gmail inbox for emails related to the given keywords.
-For each important email found, extract it as a structured life memory.
+  // ── Step 1: Search Gmail directly via REST API (no MCP needed) ──
+  const query = keywords.join(" OR ");
+  const searchResp = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  if (!searchResp.ok) {
+    const err = await searchResp.json().catch(()=>({}));
+    if (searchResp.status === 401) throw new Error("Gmail token expired. Please reconnect your Gmail account.");
+    throw new Error(err.error?.message || `Gmail API error ${searchResp.status}`);
+  }
+
+  const searchData = await searchResp.json();
+  const messages = searchData.messages || [];
+  if (messages.length === 0) return [];
+
+  // ── Step 2: Fetch top 8 email bodies ──
+  const emailTexts = [];
+  for (const msg of messages.slice(0, 8)) {
+    try {
+      const msgResp = await fetch(
+        `https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full&fields=payload,internalDate`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!msgResp.ok) continue;
+      const msgData = await msgResp.json();
+
+      // Extract text from email parts
+      const extractText = (payload) => {
+        if (!payload) return "";
+        if (payload.body?.data) {
+          try { return atob(payload.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch { return ""; }
+        }
+        if (payload.parts) return payload.parts.map(extractText).join("\n");
+        return "";
+      };
+
+      const subject = msgData.payload?.headers?.find(h => h.name === "Subject")?.value || "No subject";
+      const date    = msgData.internalDate
+        ? new Date(Number(msgData.internalDate)).toISOString().split("T")[0]
+        : "unknown date";
+      const body    = extractText(msgData.payload).slice(0, 1500);
+
+      emailTexts.push(`DATE: ${date}\nSUBJECT: ${subject}\n\n${body}`);
+    } catch { continue; }
+  }
+
+  if (emailTexts.length === 0) return [];
+
+  // ── Step 3: Send email texts to Claude for extraction ──
+  const emailContent = emailTexts.map((t, i) => `=== EMAIL ${i+1} ===\n${t}`).join("\n\n");
+
+  const sys = `You are a life event extractor. Read these real emails and extract each as a structured life memory.
 Return ONLY a valid JSON array — no markdown, no explanation:
 [{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]
-If no emails found, return an empty array: []`,
-      messages:[{
-        role: "user",
-        content: `Search my Gmail for emails related to these topics: ${keywords.join(", ")}.
-Look for: job offer letters, loan approvals, salary slips, investment confirmations, rejection emails, insurance documents, promotions, resignations.
-Extract each important email as a life memory. Return only the JSON array.`
-      }],
-    }),
-  });
+If no meaningful life events are found, return [].`;
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(()=>({}));
-    const msg = typeof err.error === "string" ? err.error
-      : err.error?.message || JSON.stringify(err.error) || `Server error ${resp.status}`;
-    throw new Error(msg);
-  }
-
-  const data = await resp.json();
-  if (data.error) {
-    const msg = typeof data.error === "string" ? data.error
-      : data.error?.message || JSON.stringify(data.error);
-    throw new Error(msg);
-  }
-
-  // Find text content in response (may include tool_use blocks)
-  const textBlock = data.content?.find(b => b.type === "text");
-  if (!textBlock) throw new Error("No text response from Gmail scan — the inbox scan may have returned no results.");
-
-  const clean = textBlock.text.replace(/```json|```/g, "").trim();
+  const raw = await callClaude(sys,
+    `Extract life memories from these emails:\n\n${emailContent}`,
+    2000
+  );
+  const clean = raw.replace(/```json|```/g, "").trim();
   if (!clean || clean === "[]") return [];
   return JSON.parse(clean);
 }
 
-function memoriesContext(memories) {
-  return memories.map(m =>
-    `[${m.date}] ${m.title.toUpperCase()}\nCategory: ${m.category} | Stress: ${m.stress}/10\nSituation: ${m.situation}\nDecision: ${m.decision}\nOutcome: ${m.outcome.toUpperCase()} — ${m.outcomeDetail}\nLesson: ${m.learned}`
-  ).join("\n\n────\n\n");
+// ─────────────────────────────────────────────────────────────────────────────
+// TOKEN OPTIMISATION HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Rough token estimate: ~4 chars per token
+const estimateTokens = (text) => Math.ceil(text.length / 4);
+
+// Hard cap: never send more than ~6000 tokens of memory context (~24KB text)
+const MAX_CONTEXT_TOKENS = 6000;
+const MAX_CONTEXT_CHARS  = MAX_CONTEXT_TOKENS * 4;
+
+// Compact single-memory serialiser — 40% fewer tokens than verbose version
+function memoryToText(m) {
+  return `[${m.date}] ${m.title} (${m.category}, stress:${m.stress})\n` +
+    `Situation: ${m.situation}\n` +
+    `Decision: ${m.decision || "—"}\n` +
+    `Outcome(${m.outcome}): ${m.outcomeDetail || "—"}\n` +
+    `Lesson: ${m.learned || "—"}`;
+}
+
+// Smart context builder:
+// 1. Keyword-relevant memories first (match question/topic)
+// 2. Then most-recent memories
+// 3. Hard-cap at MAX_CONTEXT_CHARS
+function memoriesContext(memories, query = "") {
+  if (!memories.length) return "(No memories yet)";
+
+  const q = query.toLowerCase();
+  const keywords = q.split(/\W+/).filter(w => w.length > 3);
+
+  // Score each memory by keyword relevance
+  const scored = memories.map(m => {
+    const text = `${m.title} ${m.category} ${m.situation} ${m.tags?.join(" ")}`.toLowerCase();
+    const score = keywords.reduce((acc, kw) => acc + (text.includes(kw) ? 1 : 0), 0);
+    return { m, score };
+  });
+
+  // Sort: relevant first, then by date descending
+  scored.sort((a, b) => b.score - a.score || new Date(b.m.date) - new Date(a.m.date));
+
+  // Build context up to token cap
+  const parts = [];
+  let totalChars = 0;
+  for (const { m } of scored) {
+    const txt = memoryToText(m);
+    if (totalChars + txt.length > MAX_CONTEXT_CHARS) break;
+    parts.push(txt);
+    totalChars += txt.length + 10; // +10 for separator
+  }
+
+  const included = parts.length;
+  const total    = memories.length;
+  const header   = included < total
+    ? `[Showing ${included} of ${total} memories — most relevant to your query]\n\n`
+    : "";
+
+  return header + parts.join("\n\n────\n\n");
+}
+
+// Blindspot cache — avoid re-running expensive scan when memories unchanged
+const _bsCache = { hash: "", result: null };
+function memoriesHash(memories) {
+  return memories.map(m => m.id).join(",");
+}
+function getCachedBlindspots(memories) {
+  const h = memoriesHash(memories);
+  return _bsCache.hash === h ? _bsCache.result : null;
+}
+function setCachedBlindspots(memories, result) {
+  _bsCache.hash = memoriesHash(memories);
+  _bsCache.result = result;
+}
+
+// Request lock — prevents firing the same endpoint twice simultaneously
+const _locks = {};
+function acquireLock(key) {
+  if (_locks[key]) return false;
+  _locks[key] = true;
+  return true;
+}
+function releaseLock(key) { delete _locks[key]; }
+
+// Timeout wrapper — cancels fetch after `ms` milliseconds
+async function fetchWithTimeout(url, options, ms = 55000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return resp;
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") throw new Error("Request timed out after 55s. Try again.");
+    throw e;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -804,12 +913,14 @@ Do NOT say "this is just a simulation." Treat it as real analysis.`;
 
   const run = async () => {
     if (!decision.trim() || loading) return;
+    if (!acquireLock("premortem")) return;
     setLoading(true); setError(""); setResponse("");
     try {
-      const msg = `My life memory bank:\n\n${memoriesContext(memories)}\n\n────\n\nDecision I am about to make:\n"${decision}"\n\nIt is one year later. It failed. Tell me exactly what happened and why — using my personal patterns.`;
-      setResponse(await callClaude(SYSTEM, msg, 1400));
+      const ctx = memoriesContext(memories, decision);
+      const msg = `My memories:\n\n${ctx}\n\n────\n\nDecision: "${decision}"\n\nYear later — it failed. Explain using my patterns.`;
+      setResponse(await callClaude(SYSTEM, msg, 1000));
     } catch(e) { setError(e.message); }
-    finally { setLoading(false); }
+    finally { setLoading(false); releaseLock("premortem"); }
   };
 
   return (
@@ -921,13 +1032,21 @@ Return ONLY the JSON array. Be honest and specific, not generic.`;
 
   const run = async () => {
     if (loading) return;
+    if (!acquireLock("blindspot")) return;
+
+    // Return cached result if memories haven't changed
+    const cached = getCachedBlindspots(memories);
+    if (cached) { setResult(cached); releaseLock("blindspot"); return; }
+
     setLoading(true); setError(""); setResult(null);
     try {
-      const msg = `Analyze my complete life memory bank and surface my hidden blindspots:\n\n${memoriesContext(memories)}\n\nReturn only a JSON array of 5-7 blindspot objects as specified.`;
-      const arr = await callClaudeJSON(SYSTEM, msg, 2000);
+      const ctx = memoriesContext(memories); // blindspot needs full picture
+      const msg = `Surface my hidden blindspots from these memories:\n\n${ctx}\n\nReturn JSON array of 5 blindspot objects.`;
+      const arr = await callClaudeJSON(SYSTEM, msg, 1200);
+      setCachedBlindspots(memories, arr);
       setResult(arr);
     } catch(e) { setError("Analysis failed: " + e.message); }
-    finally { setLoading(false); }
+    finally { setLoading(false); releaseLock("blindspot"); }
   };
 
   const sevLabel = { high:"● High Impact", medium:"◈ Medium", low:"◇ Low" };
@@ -964,7 +1083,7 @@ Return ONLY the JSON array. Be honest and specific, not generic.`;
               This will analyze all your decisions and surface patterns you have never consciously noticed.
             </div>
             <button className="btn-purple" onClick={run}>
-              Detect My Blindspots →
+              {getCachedBlindspots(memories) ? "Re-scan Blindspots →" : "Detect My Blindspots →"}
             </button>
           </div>
         )}
@@ -1213,47 +1332,53 @@ function ImportHubView({ onImport }) {
   };
 
   const handleFile = async file => {
-    if(!file) return; reset(); setLoading(true); setProgress(20);
-    try{
-      const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
+    if (!file) return;
+    // Read file FIRST before any state changes — mobile Safari loses file ref after setState
+    let base64;
+    try {
+      base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res(reader.result.split(",")[1]);
+        reader.onerror = () => rej(new Error("Could not read file. Try selecting it again."));
+        reader.readAsDataURL(file);
+      });
+    } catch(e) {
+      setError(e.message);
+      return;
+    }
+    reset(); setLoading(true); setProgress(20);
+    try {
       setProgress(50);
-      const sys = `You are a life intelligence extractor reading a resume/CV. Your job is to extract the COMPLETE picture of this person — not just job titles, but who they are, what decisions they made, what shaped them.
+      const sys = `You are a life intelligence extractor reading a resume/CV. Extract the COMPLETE picture of this person — not just job titles, but who they are, what decisions shaped them.
 
-Extract ALL of the following as separate life memory entries:
+Extract ALL as separate life memory entries:
+1. Every work role/position (internships, freelance, consulting)
+2. Every educational qualification (degree, diploma, certification)
+3. Every major achievement or recognition (award, promotion, patent)
+4. Every career transition or pivot
+5. Key skills/capabilities developed at each stage
 
-1. EVERY work role / position (including internships, freelance, consulting)
-2. EVERY educational qualification (degree, diploma, certification, course)
-3. EVERY major achievement or recognition (award, promotion, publication, patent)
-4. EVERY career transition or pivot (why they changed fields, companies)
-5. Key skills developed at each stage — treat as a "learning" memory
+For EACH entry infer deeply:
+- situation: What was happening in their life at that point? What challenge or opportunity?
+- decision: What did they choose?
+- outcomeDetail: Specific results, duration, achievements from the resume
+- learned: The deep personal/professional insight this built
 
-For EACH entry, deeply infer:
-- situation: What was happening in their life/career at that point? What challenge or opportunity existed?
-- decision: What did they choose to do?
-- outcomeDetail: What did this lead to? What did they achieve? Use real details from the resume.
-- learned: What insight or capability did this build in them as a person?
+Return ONLY valid JSON array, no markdown:
+[{"title":"Role at Company or Degree at Institution","date":"YYYY-MM-DD","category":"career|learning|other","situation":"Rich context","decision":"What they chose","outcome":"positive|negative|mixed","outcomeDetail":"Specific results","learned":"Deep insight","tags":["skill"],"stress":4}]
 
-Return ONLY a valid JSON array — no markdown, no explanation:
-[{
-  "title": "Descriptive title (Role at Company / Degree at Institution / Achievement)",
-  "date": "YYYY-MM-DD",
-  "category": "career|learning|other",
-  "situation": "Rich context about this period of their life",
-  "decision": "The choice they made",
-  "outcome": "positive|negative|mixed",
-  "outcomeDetail": "Specific results, duration, achievements from resume",
-  "learned": "The deep personal/professional insight this built",
-  "tags": ["skill1","domain"],
-  "stress": 4
-}]
-
-Extract 8-20 entries. Be rich and specific. This becomes their personal AI memory bank — generic entries are useless.`;
+Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
 
       const raw = await callClaudeWithDoc(sys,
-        "Read this resume completely. Extract every role, degree, certification, achievement and career transition as rich life memories. Return only JSON array.",
-        base64, "application/pdf");
-      setProgress(85);const items=parseItems(raw);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);
-    }catch(e){setError("Extraction failed: "+e.message);}finally{setLoading(false);}
+        "Extract every role, degree, certification, achievement and transition as rich life memories. Return only JSON array.",
+        base64, "application/pdf", 4000);
+      setProgress(85);
+      const items = parseItems(raw);
+      setExtracted(items);
+      setSelected(new Set(items.map((_,i) => i)));
+      setProgress(100);
+    } catch(e) { setError("Extraction failed: " + e.message); }
+    finally { setLoading(false); }
   };
 
   const handlePaste=async()=>{
@@ -1318,7 +1443,7 @@ Extract 8-20 entries. Be rich and specific. This becomes their personal AI memor
                     <span style={{fontSize:"18px"}}>📧</span>
                     <div>
                       <div style={{fontFamily:"'Cinzel',serif",fontSize:"11px",color:"var(--green)",letterSpacing:".06em"}}>Gmail Connected</div>
-                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",marginTop:"2px"}}>OAuth authenticated · inbox scan enabled</div>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",marginTop:"2px"}}>Gmail REST API · read-only access</div>
                     </div>
                   </div>
                   <button onClick={()=>{clearGmailTokens();setGmailConnected(false);reset();}}
@@ -1497,14 +1622,26 @@ function DecisionEngineView({ memories }) {
   const [response,setResponse]=useState("");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
+  const [tokenEst,setTokenEst]=useState(0);
   const EXAMPLES=["Should I accept this new job offer?","How did I handle high stress before?","Should I invest in a new venture now?","What happens when I rush into partnerships?"];
+
+  // Update token estimate live as user types
+  const handleQuestion = (val) => {
+    setQuestion(val);
+    const ctx = memoriesContext(memories, val);
+    setTokenEst(estimateTokens(ctx + val));
+  };
+
   const ask=async()=>{
     if(!question.trim()||loading) return;
+    if(!acquireLock("decision")) return; // prevent double-tap
     setLoading(true);setError("");setResponse("");
     try{
-      const sys=`You are Life Replay OS decision engine. Be direct and personal. Reference actual past situations by name. Sections: ◈ REPLAY MATCH, ◈ PATTERN DETECTED, ◈ RECOMMENDATION, ◈ WATCH OUT FOR. 2-3 lines each.`;
-      setResponse(await callClaude(sys,`My memories:\n\n${memoriesContext(memories)}\n\n────\n\nQuestion: "${question}"\n\nReply with all 4 sections.`));
-    }catch(e){setError(e.message);}finally{setLoading(false);}
+      const ctx = memoriesContext(memories, question); // keyword-filtered context
+      const sys=`You are Life Replay OS decision engine. Be direct, personal, concise. Reference past situations by name. Use sections: ◈ REPLAY MATCH, ◈ PATTERN DETECTED, ◈ RECOMMENDATION, ◈ WATCH OUT FOR. Max 2 lines each.`;
+      setResponse(await callClaude(sys,`Memories:\n\n${ctx}\n\n────\n\nQuestion: "${question}"\n\nReply with all 4 sections.`, 800));
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);releaseLock("decision");}
   };
   return (
     <div>
@@ -1512,9 +1649,13 @@ function DecisionEngineView({ memories }) {
       <div className="view-body">
         <div className="ai-panel">
           <div className="ai-panel-title">⟁ Ask the Engine</div>
-          <textarea className="ai-textarea" rows={3} placeholder="What decision are you facing?" value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&e.metaKey)ask()}}/>
-          <div className="ai-actions"><button className="btn-primary" onClick={ask} disabled={!question.trim()||loading}>{loading?"Replaying...":"Replay My Past →"}</button><button className="btn-sec" onClick={()=>setQuestion("")} disabled={loading}>Clear</button></div>
-          <div style={{marginTop:"14px"}}><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".08em",marginBottom:"8px",textTransform:"uppercase"}}>Try asking</div><div className="pattern-chips">{EXAMPLES.map(ex=><div key={ex} className="pchip" style={{cursor:"pointer"}} onClick={()=>setQuestion(ex)}><span>→</span>{ex}</div>)}</div></div>
+          <textarea className="ai-textarea" rows={3} placeholder="What decision are you facing?" value={question} onChange={e=>handleQuestion(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&e.metaKey)ask()}}/>
+          <div className="ai-actions">
+            <button className="btn-primary" onClick={ask} disabled={!question.trim()||loading}>{loading?"Replaying...":"Replay My Past →"}</button>
+            <button className="btn-sec" onClick={()=>{setQuestion("");setResponse("");setTokenEst(0);}} disabled={loading}>Clear</button>
+            {tokenEst>0&&<span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:tokenEst>4000?"var(--yellow)":"var(--text-muted)"}}>~{tokenEst.toLocaleString()} tokens</span>}
+          </div>
+          <div style={{marginTop:"14px"}}><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".08em",marginBottom:"8px",textTransform:"uppercase"}}>Try asking</div><div className="pattern-chips">{EXAMPLES.map(ex=><div key={ex} className="pchip" style={{cursor:"pointer"}} onClick={()=>handleQuestion(ex)}><span>→</span>{ex}</div>)}</div></div>
         </div>
         {loading&&<div className="ai-response"><Spinner/></div>}
         {error&&<ErrBox msg={error}/>}
@@ -1536,12 +1677,36 @@ function FutureSimView({ memories }) {
   const [error,setError]=useState("");
   const simulate=async()=>{
     if(!situation.trim()||!optA.trim()||!optB.trim()||loading) return;
+    if(!acquireLock("simulator")) return;
     setLoading(true);setError("");setResponse("");
     try{
-      const sys=`Life Replay OS Future Simulation. Predict outcomes using personal history. Sections: ◈ SIMILAR PAST, ◈ OPTION A PROJECTION (confidence %, key risk), ◈ OPTION B PROJECTION (confidence %, key risk), ◈ VERDICT, ◈ BLIND SPOT. Be direct.`;
-      setResponse(await callClaude(sys,`Memories:\n\n${memoriesContext(memories)}\n\n────\n\nSituation: ${situation}\nOption A: ${optA}\nOption B: ${optB}`));
-    }catch(e){setError(e.message);}finally{setLoading(false);}
+      const query = `${situation} ${optA} ${optB}`;
+      const ctx = memoriesContext(memories, query);
+      const sys=`Life Replay OS Future Simulation. Predict outcomes using personal history. Be concise. Sections: ◈ SIMILAR PAST, ◈ OPTION A (confidence %, key risk), ◈ OPTION B (confidence %, key risk), ◈ VERDICT, ◈ BLIND SPOT.`;
+      setResponse(await callClaude(sys,`Memories:\n\n${ctx}\n\n────\n\nSituation: ${situation}\nOption A: ${optA}\nOption B: ${optB}`, 900));
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);releaseLock("simulator");}
   };
+  return (
+    <div>
+      <div className="view-header"><div><div className="view-title">Future Simulator</div><div className="view-subtitle">Model Option A vs B against your personal history</div></div></div>
+      <div className="view-body">
+        <div className="ai-panel">
+          <div className="ai-panel-title">◇ Decision Parameters</div>
+          <div className="fg" style={{marginBottom:"14px"}}><label className="fl">Current Situation</label><textarea className="ai-textarea" rows={2} placeholder="Describe what you are facing..." value={situation} onChange={e=>setSituation(e.target.value)}/></div>
+          <div className="sim-grid">
+            <div className="option-card option-a"><div className="option-label">Option A</div><textarea className="ai-textarea" rows={3} placeholder="Describe Option A..." value={optA} onChange={e=>setOptA(e.target.value)}/></div>
+            <div className="option-card option-b"><div className="option-label">Option B</div><textarea className="ai-textarea" rows={3} placeholder="Describe Option B..." value={optB} onChange={e=>setOptB(e.target.value)}/></div>
+          </div>
+          <div className="ai-actions"><button className="btn-primary" onClick={simulate} disabled={!situation.trim()||!optA.trim()||!optB.trim()||loading}>{loading?"Simulating...":"Run Simulation →"}</button><button className="btn-sec" onClick={()=>{setSituation("");setOptA("");setOptB("");setResponse("")}} disabled={loading}>Reset</button></div>
+        </div>
+        {loading&&<div className="ai-response"><Spinner/></div>}
+        {error&&<ErrBox msg={error}/>}
+        {response&&!loading&&<div className="ai-response"><div className="ai-response-label"><div className="ai-pulse gold"/>Simulation Complete</div><div className="ai-response-text">{response}</div></div>}
+      </div>
+    </div>
+  );
+}
   return (
     <div>
       <div className="view-header"><div><div className="view-title">Future Simulator</div><div className="view-subtitle">Model Option A vs B against your personal history</div></div></div>

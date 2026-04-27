@@ -1,6 +1,6 @@
 export default function handler(req, res) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) return res.status(500).json({ error: "GOOGLE_CLIENT_ID not configured in Vercel env vars" });
+  if (!clientId) return res.status(500).json({ error: "GOOGLE_CLIENT_ID not configured" });
 
   const redirectUri = `${process.env.APP_URL || "https://life-replay-os.vercel.app"}/auth/callback`;
 
@@ -8,11 +8,16 @@ export default function handler(req, res) {
     client_id:     clientId,
     redirect_uri:  redirectUri,
     response_type: "code",
-    scope:         "https://www.googleapis.com/auth/gmail.readonly",
-    access_type:   "offline",
-    prompt:        "consent",
+    // gmail.readonly allows REST API reads — no MCP needed
+    scope: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ].join(" "),
+    access_type: "offline",
+    prompt:      "consent",
   });
 
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  return res.status(200).json({ url });
+  return res.status(200).json({
+    url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  });
 }
