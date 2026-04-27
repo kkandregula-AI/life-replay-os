@@ -22,32 +22,74 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 
 /* ── LAYOUT ── */
 .app{display:flex;height:100vh;overflow:hidden}
-.sidebar{width:215px;min-width:215px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}
-.sb-logo{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
-.sb-logo h1{font-family:'Cinzel',serif;font-size:11px;font-weight:700;letter-spacing:.18em;color:var(--gold2);text-transform:uppercase;line-height:1.4}
-.sb-logo p{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.1em;margin-top:4px}
-.sb-badge{display:inline-block;margin-top:8px;background:rgba(201,153,58,0.12);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--gold-dim);letter-spacing:.08em}
-.sb-nav{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
-.sb-section{font-family:'JetBrains Mono',monospace;font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);padding:10px 12px 4px;margin-top:4px}
-.nav-item{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text-dim);transition:all .18s;font-family:'Crimson Pro',serif;border:1px solid transparent}
+
+/* Sidebar — expanded */
+.sidebar{
+  width:220px;min-width:220px;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  transition:width .28s cubic-bezier(.4,0,.2,1), min-width .28s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+/* Sidebar — collapsed (icon rail) */
+.sidebar.collapsed{width:56px;min-width:56px}
+
+/* Logo area */
+.sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;min-height:70px}
+.sb-logo-text{overflow:hidden;transition:opacity .2s, width .28s}
+.sb-logo-text h1{font-family:'Cinzel',serif;font-size:11px;font-weight:700;letter-spacing:.18em;color:var(--gold2);text-transform:uppercase;line-height:1.4;white-space:nowrap}
+.sb-logo-text p{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.1em;margin-top:3px;white-space:nowrap}
+.sidebar.collapsed .sb-logo-text{opacity:0;width:0;pointer-events:none}
+.sb-badge{display:inline-block;margin-top:6px;background:rgba(201,153,58,0.12);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--gold-dim);letter-spacing:.06em;white-space:nowrap}
+.sidebar.collapsed .sb-badge{display:none}
+
+/* Toggle button */
+.sb-toggle{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:rgba(201,153,58,.06);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--gold-dim);font-size:11px;flex-shrink:0;transition:all .18s}
+.sb-toggle:hover{background:rgba(201,153,58,.14);color:var(--gold);border-color:rgba(201,153,58,.28)}
+.sidebar.collapsed .sb-toggle{margin:0 auto}
+
+/* Nav */
+.sb-nav{flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;overflow-x:hidden}
+.sb-section{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);padding:10px 10px 4px;margin-top:4px;white-space:nowrap;overflow:hidden;transition:opacity .18s,height .28s}
+.sidebar.collapsed .sb-section{opacity:0;height:0;padding:0;margin:0;pointer-events:none}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text-dim);transition:all .18s;font-family:'Crimson Pro',serif;border:1px solid transparent;white-space:nowrap;overflow:hidden;position:relative}
 .nav-item:hover{background:var(--glow);color:var(--text)}
 .nav-item.active{background:rgba(201,153,58,0.1);color:var(--gold2);border-color:var(--border)}
 .nav-item.active-red{background:rgba(224,92,92,0.08);color:#e05c5c;border-color:rgba(224,92,92,0.18)}
 .nav-item.active-purple{background:rgba(167,139,250,0.08);color:var(--purple);border-color:rgba(167,139,250,0.18)}
-.nav-icon{font-size:13px;width:18px;text-align:center;line-height:1}
-.nav-new{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.06em;background:rgba(249,115,22,.2);color:var(--orange);border:1px solid rgba(249,115,22,.3);border-radius:3px;padding:1px 5px;margin-left:auto}
-.sb-footer{padding:12px 18px;border-top:1px solid var(--border)}
-.mem-count{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.06em}
+.sidebar.collapsed .nav-item{padding:10px;justify-content:center;gap:0}
+.nav-icon{font-size:14px;width:20px;text-align:center;line-height:1;flex-shrink:0}
+.nav-label{transition:opacity .18s,width .28s;overflow:hidden}
+.sidebar.collapsed .nav-label{opacity:0;width:0;pointer-events:none}
+.nav-new{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.06em;background:rgba(249,115,22,.2);color:var(--orange);border:1px solid rgba(249,115,22,.3);border-radius:3px;padding:1px 5px;margin-left:auto;flex-shrink:0;transition:opacity .18s}
+.sidebar.collapsed .nav-new{display:none}
+
+/* Collapsed tooltip on hover */
+.sidebar.collapsed .nav-item::after{
+  content:attr(data-label);
+  position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
+  background:var(--card2);border:1px solid var(--border);color:var(--text);
+  padding:5px 10px;border-radius:6px;font-family:'Crimson Pro',serif;font-size:12px;
+  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .15s;z-index:200;
+}
+.sidebar.collapsed .nav-item:hover::after{opacity:1}
+
+/* Footer */
+.sb-footer{padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;overflow:hidden;transition:padding .28s}
+.sidebar.collapsed .sb-footer{padding:10px 8px}
+.mem-count{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:.06em;white-space:nowrap;overflow:hidden;transition:opacity .18s}
 .mem-count span{color:var(--gold-dim)}
-.add-mem-btn{width:100%;margin-top:10px;background:rgba(201,153,58,0.1);border:1px solid var(--border);border-radius:7px;padding:8px;cursor:pointer;font-family:'Cinzel',serif;font-size:9px;letter-spacing:.1em;color:var(--gold);text-transform:uppercase;transition:all .2s;text-align:center}
+.sidebar.collapsed .mem-count{opacity:0;height:0;pointer-events:none}
+.add-mem-btn{width:100%;margin-top:10px;background:rgba(201,153,58,0.1);border:1px solid var(--border);border-radius:7px;padding:8px;cursor:pointer;font-family:'Cinzel',serif;font-size:9px;letter-spacing:.1em;color:var(--gold);text-transform:uppercase;transition:all .2s;text-align:center;white-space:nowrap;overflow:hidden}
 .add-mem-btn:hover{background:rgba(201,153,58,0.18);border-color:rgba(201,153,58,0.3)}
+.sidebar.collapsed .add-mem-btn{font-size:16px;letter-spacing:0;padding:8px 0;margin-top:8px}
 
 /* ── MAIN ── */
-.main{flex:1;overflow-y:auto;background:var(--bg)}
-.view-header{padding:28px 36px 0;display:flex;align-items:flex-start;justify-content:space-between}
+.main{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--bg);transition:all .28s cubic-bezier(.4,0,.2,1)}
+.view-header{padding:24px 28px 0;display:flex;align-items:flex-start;justify-content:space-between}
 .view-title{font-family:'Cinzel',serif;font-size:20px;font-weight:600;letter-spacing:.05em;color:var(--text)}
 .view-subtitle{font-size:13px;color:var(--text-dim);margin-top:3px;font-style:italic}
-.view-body{padding:20px 36px 40px}
+.view-body{padding:18px 28px 40px}
 
 /* ── STATS ── */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
@@ -990,14 +1032,22 @@ function GraphView({ memories }) {
 // ROOT APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [memories,setMemories]=useState(SAMPLE);
-  const [activeView,setActiveView]=useState("dashboard");
-  const [showCapture,setShowCapture]=useState(false);
-  const addMemory=useCallback(m=>setMemories(prev=>[{...m,id:`m${Date.now()}`},...prev]),[]);
+  const [memories,    setMemories]    = useState(SAMPLE);
+  const [activeView,  setActiveView]  = useState("dashboard");
+  const [showCapture, setShowCapture] = useState(false);
+  const [collapsed,   setCollapsed]   = useState(false);
 
-  const renderView=()=>{
-    switch(activeView){
-      case "dashboard": return <DashboardView memories={memories} setView={setActiveView} setShowCapture={setShowCapture}/>;
+  const addMemory = useCallback(m => setMemories(prev => [{...m, id:`m${Date.now()}`}, ...prev]), []);
+
+  // Auto-collapse when a view is selected (gives max space to content)
+  const handleNav = (id) => {
+    setActiveView(id);
+    setCollapsed(true);
+  };
+
+  const renderView = () => {
+    switch(activeView) {
+      case "dashboard": return <DashboardView memories={memories} setView={handleNav} setShowCapture={setShowCapture}/>;
       case "vault":     return <VaultView memories={memories} setShowCapture={setShowCapture}/>;
       case "decision":  return <DecisionEngineView memories={memories}/>;
       case "simulator": return <FutureSimView memories={memories}/>;
@@ -1009,37 +1059,84 @@ export default function App() {
     }
   };
 
+  const activeTheme = (item) => {
+    if (activeView !== item.id) return "";
+    if (item.theme === "red")    return " active-red";
+    if (item.theme === "purple") return " active-purple";
+    return " active";
+  };
+
   return (
     <>
       <style>{CSS}</style>
       <div className="app">
-        <aside className="sidebar">
+
+        {/* ── SIDEBAR ── */}
+        <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
+
+          {/* Logo + toggle */}
           <div className="sb-logo">
-            <h1>Life Replay OS</h1>
-            <p>Decision Intelligence System</p>
-            <div className="sb-badge">v3.0 · Pre-Mortem + Blindspot</div>
+            <div className="sb-logo-text">
+              <h1>Life Replay OS</h1>
+              <p>Decision Intelligence</p>
+              <div className="sb-badge">v3.0 · New Intelligence</div>
+            </div>
+            <button
+              className="sb-toggle"
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? "▶" : "◀"}
+            </button>
           </div>
+
+          {/* Nav */}
           <nav className="sb-nav">
-            {NAV.map((item,i)=>
-              item.section
-                ? <div key={i} className="sb-section">{item.section}{item.isNew&&<span style={{marginLeft:"6px",background:"rgba(249,115,22,.2)",color:"var(--orange)",border:"1px solid rgba(249,115,22,.3)",borderRadius:"3px",padding:"1px 5px",fontSize:"7px",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".06em"}}>NEW</span>}</div>
-                : <div key={item.id}
-                    className={`nav-item${activeView===item.id?(item.theme==="red"?" active-red":item.theme==="purple"?" active-purple":" active"):""}`}
-                    onClick={()=>setActiveView(item.id)}>
-                    <span className="nav-icon">{item.icon}</span>
-                    {item.label}
-                    {item.isNew&&<span className="nav-new">NEW</span>}
-                  </div>
+            {NAV.map((item, i) =>
+              item.section ? (
+                <div key={i} className="sb-section">
+                  {item.section}
+                  {item.isNew && (
+                    <span style={{marginLeft:"6px",background:"rgba(249,115,22,.2)",color:"var(--orange)",border:"1px solid rgba(249,115,22,.3)",borderRadius:"3px",padding:"1px 5px",fontSize:"7px",fontFamily:"'JetBrains Mono',monospace"}}>NEW</span>
+                  )}
+                </div>
+              ) : (
+                <div
+                  key={item.id}
+                  data-label={item.label}
+                  className={`nav-item${activeTheme(item)}`}
+                  onClick={() => handleNav(item.id)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                  {item.isNew && <span className="nav-new">NEW</span>}
+                </div>
+              )
             )}
           </nav>
+
+          {/* Footer */}
           <div className="sb-footer">
             <div className="mem-count"><span>{memories.length}</span> memories indexed</div>
-            <button className="add-mem-btn" onClick={()=>setShowCapture(true)}>+ Capture Memory</button>
+            <button
+              className="add-mem-btn"
+              onClick={() => { setShowCapture(true); setCollapsed(true); }}
+            >
+              {collapsed ? "+" : "+ Capture Memory"}
+            </button>
           </div>
         </aside>
+
+        {/* ── MAIN CONTENT ── */}
         <main className="main">{renderView()}</main>
       </div>
-      {showCapture&&<CaptureModal onClose={()=>setShowCapture(false)} onSave={m=>{addMemory(m);setShowCapture(false);}}/>}
+
+      {showCapture && (
+        <CaptureModal
+          onClose={() => setShowCapture(false)}
+          onSave={m => { addMemory(m); setShowCapture(false); }}
+        />
+      )}
     </>
   );
 }
