@@ -269,6 +269,42 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .import-summary{background:rgba(62,207,108,.06);border:1px solid rgba(62,207,108,.18);border-radius:10px;padding:14px 18px;margin-top:12px}
 .import-summary-title{font-family:'Cinzel',serif;font-size:11px;color:var(--green);letter-spacing:.06em;margin-bottom:5px}
 
+/* ── WEALTH OS ── */
+.wealth-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.wtab{padding:10px 16px;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.07em;color:var(--text-dim);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .18s;white-space:nowrap}
+.wtab:hover{color:var(--text)}
+.wtab.active{color:var(--gold2);border-bottom-color:var(--gold)}
+.wealth-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+@media(max-width:600px){.wealth-grid{grid-template-columns:1fr 1fr!important}}
+.wealth-stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.wealth-stat-val{font-family:'Cinzel',serif;font-size:20px;font-weight:600;line-height:1.1}
+.wealth-stat-lbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
+.witem{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;position:relative}
+.witem:hover{border-color:rgba(201,153,58,.22)}
+.witem-icon{font-size:20px;flex-shrink:0;width:32px;text-align:center}
+.witem-name{font-family:'Cinzel',serif;font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;line-height:1.2}
+.witem-type{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:4px}
+.witem-val{font-family:'Cinzel',serif;font-size:16px;font-weight:600}
+.witem-meta{font-size:11.5px;color:var(--text-dim);margin-top:3px}
+.witem-del{position:absolute;top:10px;right:10px;background:none;border:none;color:rgba(224,92,92,0);cursor:pointer;font-size:12px;transition:color .15s;padding:4px}
+.witem:hover .witem-del{color:rgba(224,92,92,.5)}
+.witem-del:hover{color:#e05c5c!important}
+.wform{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.wform-title{font-family:'Cinzel',serif;font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--gold);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.wr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:600px){.wr3{grid-template-columns:1fr 1fr!important}}
+.ins-badge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 8px;border-radius:3px;letter-spacing:.06em;text-transform:uppercase}
+.ins-active{background:rgba(62,207,108,.1);color:var(--green);border:1px solid rgba(62,207,108,.2)}
+.ins-expiring{background:rgba(240,180,41,.1);color:var(--yellow);border:1px solid rgba(240,180,41,.2)}
+.ins-expired{background:rgba(224,92,92,.1);color:var(--red);border:1px solid rgba(224,92,92,.2)}
+.nw-bar{height:8px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.05);margin-top:6px;display:flex}
+.nw-fill-a{background:linear-gradient(90deg,var(--green),#22c55e);border-radius:4px}
+.nw-fill-l{background:linear-gradient(90deg,var(--red),#f87171);border-radius:4px}
+.wealth-import-box{background:var(--card2);border:2px dashed rgba(201,153,58,.2);border-radius:12px;padding:24px;text-align:center;margin-bottom:16px;cursor:pointer;transition:all .2s}
+.wealth-import-box:hover{border-color:rgba(201,153,58,.4);background:rgba(201,153,58,.03)}
+.section-divider{display:flex;align-items:center;gap:10px;margin:20px 0 14px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.1em;color:var(--gold);text-transform:uppercase}
+.section-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
 /* ── DIARY ── */
 .diary-wrap{max-width:680px;margin:0 auto}
 .diary-year{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.2em;color:var(--gold-dim);text-transform:uppercase;padding:24px 0 8px;display:flex;align-items:center;gap:12px}
@@ -396,6 +432,8 @@ const NAV = [
   { section: "New Intelligence", isNew: true },
   {id:"premortem", icon:"☠", label:"Pre-Mortem", theme:"red"},
   {id:"blindspot", icon:"◉", label:"Blindspot Detector", theme:"purple"},
+  { section: "Finance" },
+  {id:"wealth",    icon:"◎", label:"Wealth OS"},
   { section: "Data" },
   {id:"graph",     icon:"⬡", label:"Life Graph"},
   {id:"import",    icon:"⊕", label:"Import Hub"},
@@ -594,7 +632,37 @@ async function fetchWithTimeout(url, options, ms = 90000) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DUPLICATE DETECTION
+// WEALTH OS STORAGE
+// ─────────────────────────────────────────────────────────────────────────────
+const WEALTH_KEY = "lros_wealth";
+const loadWealth = () => {
+  try {
+    const raw = localStorage.getItem(WEALTH_KEY);
+    return raw ? JSON.parse(raw) : { assets:[], liabilities:[], insurance:[] };
+  } catch { return { assets:[], liabilities:[], insurance:[] }; }
+};
+const saveWealth = (w) => {
+  try { localStorage.setItem(WEALTH_KEY, JSON.stringify(w)); } catch {}
+};
+
+// Indian number formatter
+const fmtINR = (n) => {
+  if (!n && n !== 0) return "—";
+  const num = Number(n);
+  if (isNaN(num)) return "—";
+  if (num >= 1e7)  return `₹${(num/1e7).toFixed(2)}Cr`;
+  if (num >= 1e5)  return `₹${(num/1e5).toFixed(2)}L`;
+  return `₹${num.toLocaleString("en-IN")}`;
+};
+
+// Asset types
+const ASSET_TYPES = ["Real Estate","Bank Account","Fixed Deposit","Mutual Fund","Stocks/Equity","Gold/Jewelry","Vehicle","PPF/EPF","Crypto","Business","Other"];
+const LIAB_TYPES  = ["Home Loan","Personal Loan","Car Loan","Education Loan","Credit Card","Business Loan","Mortgage","Other"];
+const INS_TYPES   = ["Life Insurance","Health Insurance","Term Insurance","Vehicle Insurance","Property Insurance","ULIP","Endowment","Other"];
+const ASSET_ICONS = {"Real Estate":"🏠","Bank Account":"🏦","Fixed Deposit":"📋","Mutual Fund":"📊","Stocks/Equity":"📈","Gold/Jewelry":"🪙","Vehicle":"🚗","PPF/EPF":"🛡","Crypto":"₿","Business":"🏢","Other":"◈"};
+const LIAB_ICONS  = {"Home Loan":"🏠","Personal Loan":"💳","Car Loan":"🚗","Education Loan":"🎓","Credit Card":"💳","Business Loan":"🏢","Mortgage":"🏦","Other":"◇"};
+const INS_ICONS   = {"Life Insurance":"❤","Health Insurance":"🏥","Term Insurance":"🛡","Vehicle Insurance":"🚗","Property Insurance":"🏠","ULIP":"📊","Endowment":"📋","Other":"◈"};
+
 // ─────────────────────────────────────────────────────────────────────────────
 function normTitle(t="") { return t.toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/\s+/g," ").trim(); }
 function titleSimilarity(a, b) {
@@ -629,7 +697,547 @@ function deduplicateBatch(candidates, existing) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PERSONAL DIARY VIEW
+// WEALTH OS VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function WealthView() {
+  const [data, setData] = useState(loadWealth);
+  const [tab, setTab]   = useState("dashboard");
+  const [showForm, setShowForm] = useState(null); // "asset"|"liability"|"insurance"
+  const [pasteText, setPasteText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState("");
+  const [importError, setImportError]   = useState("");
+
+  const save = (d) => { saveWealth(d); setData({...d}); };
+
+  const deleteItem = (section, id) => {
+    const d = {...data, [section]: data[section].filter(x => x.id !== id)};
+    save(d);
+  };
+
+  const addItem = (section, item) => {
+    const d = {...data, [section]: [{...item, id:`w${Date.now()}`}, ...data[section]]};
+    save(d);
+  };
+
+  // ── Totals
+  const totalAssets      = data.assets.reduce((s,a) => s + (Number(a.value)||0), 0);
+  const totalLiabilities = data.liabilities.reduce((s,l) => s + (Number(l.outstanding)||0), 0);
+  const netWorth         = totalAssets - totalLiabilities;
+  const totalPremium     = data.insurance.reduce((s,i) => s + (Number(i.premium)||0), 0);
+  const today            = new Date().toISOString().split("T")[0];
+
+  // Insurance status
+  const insStatus = (i) => {
+    if (!i.endDate) return "active";
+    if (i.endDate < today) return "expired";
+    const days = (new Date(i.endDate) - new Date()) / 86400000;
+    return days < 30 ? "expiring" : "active";
+  };
+
+  // ── Smart document import
+  const handleWealthImport = async () => {
+    if (!pasteText.trim()) return;
+    setImporting(true); setImportResult(""); setImportError("");
+    try {
+      const sys = `You are a financial document extractor. Read this document and extract ALL financial items.
+Return ONLY a valid JSON object (no markdown):
+{
+  "assets": [{"name":"","type":"Real Estate|Bank Account|Fixed Deposit|Mutual Fund|Stocks/Equity|Gold/Jewelry|Vehicle|PPF/EPF|Crypto|Business|Other","institution":"","value":0,"date":"YYYY-MM-DD","maturity":"YYYY-MM-DD or null","notes":""}],
+  "liabilities": [{"name":"","type":"Home Loan|Personal Loan|Car Loan|Education Loan|Credit Card|Business Loan|Mortgage|Other","institution":"","principal":0,"outstanding":0,"emi":0,"rate":0,"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","notes":""}],
+  "insurance": [{"name":"","type":"Life Insurance|Health Insurance|Term Insurance|Vehicle Insurance|Property Insurance|ULIP|Endowment|Other","insurer":"","policyNo":"","premium":0,"coverage":0,"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","nominees":"","notes":""}]
+}
+Extract only items clearly mentioned. Use 0 for unknown numbers. Return only the JSON object.`;
+      const raw = await callClaude(sys, `Extract financial details from this document:\n\n${pasteText}`, 1500);
+      const clean = raw.replace(/```json|```/g,"").trim();
+      const parsed = JSON.parse(clean);
+      let added = 0;
+      const d = {...data};
+      if (parsed.assets?.length)      { d.assets      = [...(parsed.assets.map(x=>({...x,id:`w${Date.now()+Math.random()}`}))), ...d.assets];      added += parsed.assets.length; }
+      if (parsed.liabilities?.length) { d.liabilities = [...(parsed.liabilities.map(x=>({...x,id:`w${Date.now()+Math.random()}`}))), ...d.liabilities]; added += parsed.liabilities.length; }
+      if (parsed.insurance?.length)   { d.insurance   = [...(parsed.insurance.map(x=>({...x,id:`w${Date.now()+Math.random()}`}))), ...d.insurance];   added += parsed.insurance.length; }
+      save(d);
+      setImportResult(`✦ ${added} financial records extracted and saved.`);
+      setPasteText("");
+    } catch(e) { setImportError("Extraction failed: " + e.message); }
+    finally { setImporting(false); }
+  };
+
+  const TABS = [
+    {id:"dashboard",label:"Dashboard"},
+    {id:"assets",label:`Assets (${data.assets.length})`},
+    {id:"liabilities",label:`Liabilities (${data.liabilities.length})`},
+    {id:"insurance",label:`Insurance (${data.insurance.length})`},
+    {id:"wimport",label:"Import"},
+  ];
+
+  const exportWealth = () => {
+    const assetRows = data.assets.map(a => `
+<tr><td>${ASSET_ICONS[a.type]||""} ${a.name}</td><td>${a.type}</td><td>${a.institution||"—"}</td><td style="text-align:right;font-weight:600;color:#166534">${fmtINR(a.value)}</td><td>${a.maturity||"—"}</td></tr>`).join("");
+    const liabRows = data.liabilities.map(l => `
+<tr><td>${LIAB_ICONS[l.type]||""} ${l.name}</td><td>${l.type}</td><td>${l.institution||"—"}</td><td style="text-align:right">${fmtINR(l.principal)}</td><td style="text-align:right;color:#991b1b;font-weight:600">${fmtINR(l.outstanding)}</td><td style="text-align:right">${fmtINR(l.emi)}/mo</td><td>${l.endDate||"—"}</td></tr>`).join("");
+    const insRows = data.insurance.map(i => `
+<tr><td>${INS_ICONS[i.type]||""} ${i.name}</td><td>${i.type}</td><td>${i.insurer||"—"}</td><td>${i.policyNo||"—"}</td><td style="text-align:right">${fmtINR(i.premium)}/yr</td><td style="text-align:right;font-weight:600">${fmtINR(i.coverage)}</td><td>${i.endDate||"—"}</td></tr>`).join("");
+
+    const body = `
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px">
+  <div style="border:1px solid #e8d8b0;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-family:'Cinzel',serif;font-size:22px;font-weight:600;color:#166534">${fmtINR(totalAssets)}</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.08em;margin-top:4px">Total Assets</div>
+  </div>
+  <div style="border:1px solid #e8d8b0;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-family:'Cinzel',serif;font-size:22px;font-weight:600;color:#991b1b">${fmtINR(totalLiabilities)}</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.08em;margin-top:4px">Total Liabilities</div>
+  </div>
+  <div style="border:2px solid #c9993a;border-radius:8px;padding:16px;text-align:center;background:#faf5e8">
+    <div style="font-family:'Cinzel',serif;font-size:22px;font-weight:600;color:${netWorth>=0?"#166534":"#991b1b"}">${fmtINR(netWorth)}</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8a6a20;text-transform:uppercase;letter-spacing:.08em;margin-top:4px">Net Worth</div>
+  </div>
+</div>
+
+${data.assets.length ? `<h2>Assets</h2>
+<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
+<thead><tr style="background:#f5edd8;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#8a6a20">
+<th style="text-align:left;padding:8px 10px">Asset</th><th style="text-align:left;padding:8px 10px">Type</th><th>Institution</th><th style="text-align:right;padding:8px 10px">Value</th><th>Maturity</th></tr></thead>
+<tbody>${assetRows}</tbody></table>` : ""}
+
+${data.liabilities.length ? `<h2>Liabilities</h2>
+<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
+<thead><tr style="background:#fef2f2;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#991b1b">
+<th style="text-align:left;padding:8px 10px">Loan</th><th>Type</th><th>Institution</th><th style="text-align:right">Principal</th><th style="text-align:right">Outstanding</th><th style="text-align:right">EMI</th><th>End Date</th></tr></thead>
+<tbody>${liabRows}</tbody></table>` : ""}
+
+${data.insurance.length ? `<h2>Insurance Policies</h2>
+<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
+<thead><tr style="background:#f0fdf4;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#166534">
+<th style="text-align:left;padding:8px 10px">Policy</th><th>Type</th><th>Insurer</th><th>Policy No.</th><th style="text-align:right">Premium</th><th style="text-align:right">Coverage</th><th>Expiry</th></tr></thead>
+<tbody>${insRows}</tbody></table>` : ""}`;
+    openExportWindow("Wealth Statement", body);
+  };
+
+  return (
+    <div>
+      <div className="view-header">
+        <div><div className="view-title">Wealth OS</div><div className="view-subtitle">Assets · Liabilities · Insurance · Net Worth</div></div>
+        <ExportBtn onClick={exportWealth} label="Wealth Report"/>
+      </div>
+      <div className="view-body">
+        {/* Sub-tabs */}
+        <div className="wealth-tabs">
+          {TABS.map(t=><div key={t.id} className={`wtab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>{t.label}</div>)}
+        </div>
+
+        {/* ── DASHBOARD ── */}
+        {tab==="dashboard" && (
+          <div>
+            <div className="wealth-grid">
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{color:"var(--green)"}}>{fmtINR(totalAssets)}</div>
+                <div className="wealth-stat-lbl">Total Assets</div>
+              </div>
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{color:"var(--red)"}}>{fmtINR(totalLiabilities)}</div>
+                <div className="wealth-stat-lbl">Total Liabilities</div>
+              </div>
+              <div className="wealth-stat" style={{border:"1px solid rgba(201,153,58,.35)"}}>
+                <div className="wealth-stat-val" style={{color:netWorth>=0?"var(--green)":"var(--red)"}}>{fmtINR(netWorth)}</div>
+                <div className="wealth-stat-lbl">Net Worth</div>
+              </div>
+            </div>
+
+            {/* Net Worth bar */}
+            {(totalAssets > 0 || totalLiabilities > 0) && (
+              <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"16px 18px",marginBottom:"16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px",fontSize:"12px",color:"var(--text-dim)"}}>
+                  <span style={{color:"var(--green)"}}>Assets {Math.round(totalAssets/(totalAssets+totalLiabilities||1)*100)}%</span>
+                  <span style={{color:"var(--red)"}}>Liabilities {Math.round(totalLiabilities/(totalAssets+totalLiabilities||1)*100)}%</span>
+                </div>
+                <div className="nw-bar">
+                  <div className="nw-fill-a" style={{width:`${totalAssets/(totalAssets+totalLiabilities||1)*100}%`}}/>
+                  <div className="nw-fill-l" style={{width:`${totalLiabilities/(totalAssets+totalLiabilities||1)*100}%`}}/>
+                </div>
+              </div>
+            )}
+
+            {/* Summary cards */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"16px"}}>
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{fontSize:"16px",color:"var(--blue)"}}>{data.assets.length}</div>
+                <div className="wealth-stat-lbl">Asset Records</div>
+                <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"4px"}}>
+                  {data.assets.length > 0 ? `Largest: ${fmtINR(Math.max(...data.assets.map(a=>Number(a.value)||0)))}` : "None added yet"}
+                </div>
+              </div>
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{fontSize:"16px",color:"var(--red)"}}>{data.liabilities.length}</div>
+                <div className="wealth-stat-lbl">Active Loans</div>
+                <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"4px"}}>
+                  {data.liabilities.length > 0 ? `EMI: ${fmtINR(data.liabilities.reduce((s,l)=>s+(Number(l.emi)||0),0))}/mo` : "No loans"}
+                </div>
+              </div>
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{fontSize:"16px",color:"var(--green)"}}>{data.insurance.length}</div>
+                <div className="wealth-stat-lbl">Insurance Policies</div>
+                <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"4px"}}>
+                  {data.insurance.length > 0 ? `Premium: ${fmtINR(totalPremium)}/yr` : "No policies"}
+                </div>
+              </div>
+              <div className="wealth-stat">
+                <div className="wealth-stat-val" style={{fontSize:"16px",color:"var(--yellow)"}}>
+                  {data.insurance.filter(i=>insStatus(i)==="expiring").length}
+                </div>
+                <div className="wealth-stat-lbl">Expiring Soon</div>
+                <div style={{fontSize:"11px",color:"var(--text-dim)",marginTop:"4px"}}>Within 30 days</div>
+              </div>
+            </div>
+
+            {/* Quick links */}
+            {data.assets.length === 0 && data.liabilities.length === 0 && data.insurance.length === 0 && (
+              <div style={{textAlign:"center",padding:"32px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:"12px"}}>
+                <div style={{fontSize:"32px",marginBottom:"12px"}}>◎</div>
+                <div style={{fontFamily:"'Cinzel',serif",fontSize:"13px",color:"var(--gold)",letterSpacing:".06em",marginBottom:"8px"}}>No wealth data yet</div>
+                <div style={{fontSize:"13px",color:"var(--text-dim)",marginBottom:"18px",fontStyle:"italic"}}>Add assets, loans, and insurance manually or import from documents</div>
+                <div style={{display:"flex",gap:"10px",justifyContent:"center",flexWrap:"wrap"}}>
+                  <button className="btn-primary" onClick={()=>setTab("assets")}>+ Add Asset</button>
+                  <button className="btn-sec" onClick={()=>setTab("wimport")}>Import Document</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── ASSETS ── */}
+        {tab==="assets" && (
+          <div>
+            <AddAssetForm onAdd={item=>addItem("assets",item)} />
+            {data.assets.length === 0
+              ? <div className="empty-state"><div className="empty-icon">🏠</div><div className="empty-title">No assets added</div><div className="empty-desc">Add your first asset above</div></div>
+              : data.assets.map(a => (
+                <div key={a.id} className="witem">
+                  <div className="witem-icon">{ASSET_ICONS[a.type]||"◈"}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="witem-type">{a.type}</div>
+                    <div className="witem-name">{a.name}</div>
+                    <div className="witem-val" style={{color:"var(--green)"}}>{fmtINR(a.value)}</div>
+                    {a.institution && <div className="witem-meta">{a.institution}{a.maturity?` · Matures ${a.maturity}`:""}</div>}
+                    {a.notes && <div className="witem-meta" style={{fontStyle:"italic"}}>{a.notes}</div>}
+                  </div>
+                  <button className="witem-del" onClick={()=>deleteItem("assets",a.id)}>✕</button>
+                </div>
+              ))
+            }
+          </div>
+        )}
+
+        {/* ── LIABILITIES ── */}
+        {tab==="liabilities" && (
+          <div>
+            <AddLiabilityForm onAdd={item=>addItem("liabilities",item)} />
+            {data.liabilities.length === 0
+              ? <div className="empty-state"><div className="empty-icon">💳</div><div className="empty-title">No liabilities added</div></div>
+              : data.liabilities.map(l => (
+                <div key={l.id} className="witem">
+                  <div className="witem-icon">{LIAB_ICONS[l.type]||"◇"}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="witem-type">{l.type}</div>
+                    <div className="witem-name">{l.name}</div>
+                    <div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginTop:"4px"}}>
+                      <div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",textTransform:"uppercase"}}>Outstanding</div><div className="witem-val" style={{color:"var(--red)",fontSize:"15px"}}>{fmtINR(l.outstanding)}</div></div>
+                      {l.emi>0 && <div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",textTransform:"uppercase"}}>EMI/Month</div><div style={{fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,color:"var(--yellow)"}}>{fmtINR(l.emi)}</div></div>}
+                      {l.rate>0 && <div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",textTransform:"uppercase"}}>Rate</div><div style={{fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,color:"var(--text)"}}>{l.rate}%</div></div>}
+                    </div>
+                    {l.institution && <div className="witem-meta">{l.institution}{l.endDate?` · Closes ${l.endDate}`:""}</div>}
+                    {l.notes && <div className="witem-meta" style={{fontStyle:"italic"}}>{l.notes}</div>}
+                  </div>
+                  <button className="witem-del" onClick={()=>deleteItem("liabilities",l.id)}>✕</button>
+                </div>
+              ))
+            }
+          </div>
+        )}
+
+        {/* ── INSURANCE ── */}
+        {tab==="insurance" && (
+          <div>
+            <AddInsuranceForm onAdd={item=>addItem("insurance",item)} />
+            {data.insurance.length === 0
+              ? <div className="empty-state"><div className="empty-icon">🛡</div><div className="empty-title">No insurance policies added</div></div>
+              : data.insurance.map(i => {
+                const st = insStatus(i);
+                return (
+                  <div key={i.id} className="witem">
+                    <div className="witem-icon">{INS_ICONS[i.type]||"◈"}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}>
+                        <div className="witem-type" style={{margin:0}}>{i.type}</div>
+                        <span className={`ins-badge ${st==="expired"?"ins-expired":st==="expiring"?"ins-expiring":"ins-active"}`}>
+                          {st==="expired"?"Expired":st==="expiring"?"Expiring Soon":"Active"}
+                        </span>
+                      </div>
+                      <div className="witem-name">{i.name}</div>
+                      <div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginTop:"4px"}}>
+                        {i.coverage>0 && <div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",textTransform:"uppercase"}}>Coverage</div><div className="witem-val" style={{color:"var(--green)",fontSize:"15px"}}>{fmtINR(i.coverage)}</div></div>}
+                        {i.premium>0 && <div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",textTransform:"uppercase"}}>Premium/Year</div><div style={{fontFamily:"'Cinzel',serif",fontSize:"14px",fontWeight:600,color:"var(--text)"}}>{fmtINR(i.premium)}</div></div>}
+                      </div>
+                      <div className="witem-meta">{i.insurer||""}{i.policyNo?` · Policy: ${i.policyNo}`:""}{i.endDate?` · Expires ${i.endDate}`:""}</div>
+                      {i.nominees && <div className="witem-meta">Nominee: {i.nominees}</div>}
+                    </div>
+                    <button className="witem-del" onClick={()=>deleteItem("insurance",i.id)}>✕</button>
+                  </div>
+                );
+              })
+            }
+          </div>
+        )}
+
+        {/* ── IMPORT ── */}
+        {tab==="wimport" && (
+          <div>
+            <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"16px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)",lineHeight:"1.6"}}>
+              Paste text from any <strong style={{color:"var(--text)"}}>financial document</strong> — loan sanction letter, insurance policy, bank statement, FD receipt, investment statement. Claude extracts and stores all details automatically.
+            </div>
+            <textarea className="ai-textarea" rows={10}
+              placeholder={"Paste document text here...\n\nExamples:\n• Home loan sanction letter\n• Insurance policy document\n• Fixed deposit receipt\n• Mutual fund statement\n• Property registration document"}
+              value={pasteText} onChange={e=>setPasteText(e.target.value)}
+              style={{marginBottom:"12px",minHeight:"180px"}}/>
+            <button className="btn-primary" onClick={handleWealthImport} disabled={!pasteText.trim()||importing}>
+              {importing ? "Extracting..." : "Extract & Save →"}
+            </button>
+            {importing && <div style={{marginTop:"12px",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>Reading document and extracting financial records...</div>}
+            {importError && <ErrBox msg={importError}/>}
+            {importResult && <div className="import-summary" style={{marginTop:"12px"}}><div className="import-summary-title">{importResult}</div><div style={{fontSize:"13px",color:"var(--text-dim)"}}>Check Assets, Liabilities, and Insurance tabs to review.</div></div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-forms ─────────────────────────────────────────────────────────────────
+function AddAssetForm({ onAdd }) {
+  const blank = {name:"",type:"Bank Account",institution:"",value:"",date:new Date().toISOString().split("T")[0],maturity:"",notes:""};
+  const [f,setF] = useState(blank);
+  const [open,setOpen] = useState(false);
+  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const save = () => { if(!f.name.trim()||!f.value) return; onAdd(f); setF(blank); setOpen(false); };
+  return (
+    <div className="wform">
+      <div className="wform-title" style={{cursor:"pointer",justifyContent:"space-between"}} onClick={()=>setOpen(o=>!o)}>
+        <span>◈ Add Asset</span><span style={{fontSize:"14px"}}>{open?"▲":"▼"}</span>
+      </div>
+      {open && (<>
+        <div className="fr"><div className="fg"><label className="fl">Name *</label><input className="fi" placeholder="e.g. SBI Savings Account" value={f.name} onChange={e=>set("name",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e=>set("type",e.target.value)}>{ASSET_TYPES.map(t=><option key={t}>{t}</option>)}</select></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Current Value (₹) *</label><input className="fi" type="number" placeholder="0" value={f.value} onChange={e=>set("value",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Institution</label><input className="fi" placeholder="Bank / Fund house" value={f.institution} onChange={e=>set("institution",e.target.value)}/></div></div>
+        <div className="fr"><div className="fg"><label className="fl">As of Date</label><input className="fi" type="date" value={f.date} onChange={e=>set("date",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Maturity Date</label><input className="fi" type="date" value={f.maturity} onChange={e=>set("maturity",e.target.value)}/></div></div>
+        <div className="fg"><label className="fl">Notes</label><input className="fi" placeholder="Account number, folio, etc." value={f.notes} onChange={e=>set("notes",e.target.value)}/></div>
+        <div style={{display:"flex",gap:"8px"}}><button className="btn-primary" onClick={save} disabled={!f.name.trim()||!f.value}>Save Asset</button><button className="btn-sec" onClick={()=>setOpen(false)}>Cancel</button></div>
+      </>)}
+    </div>
+  );
+}
+
+function AddLiabilityForm({ onAdd }) {
+  const blank = {name:"",type:"Home Loan",institution:"",principal:"",outstanding:"",emi:"",rate:"",startDate:"",endDate:"",notes:""};
+  const [f,setF] = useState(blank);
+  const [open,setOpen] = useState(false);
+  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const save = () => { if(!f.name.trim()) return; onAdd(f); setF(blank); setOpen(false); };
+  return (
+    <div className="wform">
+      <div className="wform-title" style={{cursor:"pointer",justifyContent:"space-between"}} onClick={()=>setOpen(o=>!o)}>
+        <span>◇ Add Loan / Liability</span><span style={{fontSize:"14px"}}>{open?"▲":"▼"}</span>
+      </div>
+      {open && (<>
+        <div className="fr"><div className="fg"><label className="fl">Name *</label><input className="fi" placeholder="e.g. SBI Home Loan" value={f.name} onChange={e=>set("name",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e=>set("type",e.target.value)}>{LIAB_TYPES.map(t=><option key={t}>{t}</option>)}</select></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Institution</label><input className="fi" placeholder="Bank / NBFC" value={f.institution} onChange={e=>set("institution",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Interest Rate %</label><input className="fi" type="number" step="0.1" placeholder="8.5" value={f.rate} onChange={e=>set("rate",e.target.value)}/></div></div>
+        <div className="wr3"><div className="fg"><label className="fl">Principal (₹)</label><input className="fi" type="number" placeholder="0" value={f.principal} onChange={e=>set("principal",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Outstanding (₹)</label><input className="fi" type="number" placeholder="0" value={f.outstanding} onChange={e=>set("outstanding",e.target.value)}/></div>
+        <div className="fg"><label className="fl">EMI/Month (₹)</label><input className="fi" type="number" placeholder="0" value={f.emi} onChange={e=>set("emi",e.target.value)}/></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Start Date</label><input className="fi" type="date" value={f.startDate} onChange={e=>set("startDate",e.target.value)}/></div>
+        <div className="fg"><label className="fl">End / Closure Date</label><input className="fi" type="date" value={f.endDate} onChange={e=>set("endDate",e.target.value)}/></div></div>
+        <div className="fg"><label className="fl">Notes</label><input className="fi" placeholder="Loan account number, collateral, etc." value={f.notes} onChange={e=>set("notes",e.target.value)}/></div>
+        <div style={{display:"flex",gap:"8px"}}><button className="btn-primary" onClick={save} disabled={!f.name.trim()}>Save Liability</button><button className="btn-sec" onClick={()=>setOpen(false)}>Cancel</button></div>
+      </>)}
+    </div>
+  );
+}
+
+function AddInsuranceForm({ onAdd }) {
+  const blank = {name:"",type:"Life Insurance",insurer:"",policyNo:"",premium:"",coverage:"",startDate:"",endDate:"",nominees:"",notes:""};
+  const [f,setF] = useState(blank);
+  const [open,setOpen] = useState(false);
+  const set = (k,v) => setF(p=>({...p,[k]:v}));
+  const save = () => { if(!f.name.trim()) return; onAdd(f); setF(blank); setOpen(false); };
+  return (
+    <div className="wform">
+      <div className="wform-title" style={{cursor:"pointer",justifyContent:"space-between"}} onClick={()=>setOpen(o=>!o)}>
+        <span>🛡 Add Insurance Policy</span><span style={{fontSize:"14px"}}>{open?"▲":"▼"}</span>
+      </div>
+      {open && (<>
+        <div className="fr"><div className="fg"><label className="fl">Policy Name *</label><input className="fi" placeholder="e.g. LIC Jeevan Anand" value={f.name} onChange={e=>set("name",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Type</label><select className="fs" value={f.type} onChange={e=>set("type",e.target.value)}>{INS_TYPES.map(t=><option key={t}>{t}</option>)}</select></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Insurer</label><input className="fi" placeholder="LIC / Star Health / etc." value={f.insurer} onChange={e=>set("insurer",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Policy Number</label><input className="fi" placeholder="Policy No." value={f.policyNo} onChange={e=>set("policyNo",e.target.value)}/></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Annual Premium (₹)</label><input className="fi" type="number" placeholder="0" value={f.premium} onChange={e=>set("premium",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Coverage Amount (₹)</label><input className="fi" type="number" placeholder="0" value={f.coverage} onChange={e=>set("coverage",e.target.value)}/></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Start Date</label><input className="fi" type="date" value={f.startDate} onChange={e=>set("startDate",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Expiry Date</label><input className="fi" type="date" value={f.endDate} onChange={e=>set("endDate",e.target.value)}/></div></div>
+        <div className="fr"><div className="fg"><label className="fl">Nominee(s)</label><input className="fi" placeholder="Nominee name(s)" value={f.nominees} onChange={e=>set("nominees",e.target.value)}/></div>
+        <div className="fg"><label className="fl">Notes</label><input className="fi" placeholder="Rider, remarks, etc." value={f.notes} onChange={e=>set("notes",e.target.value)}/></div></div>
+        <div style={{display:"flex",gap:"8px"}}><button className="btn-primary" onClick={save} disabled={!f.name.trim()}>Save Policy</button><button className="btn-sec" onClick={()=>setOpen(false)}>Cancel</button></div>
+      </>)}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uses browser's native print-to-PDF — works on all devices, no library needed
+// ─────────────────────────────────────────────────────────────────────────────
+const EXPORT_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Crimson Pro',Georgia,serif;color:#1a1a1a;background:#fff;padding:40px;max-width:780px;margin:0 auto;font-size:14px;line-height:1.7}
+  h1{font-family:'Cinzel',serif;font-size:22px;font-weight:600;letter-spacing:.04em;color:#1a1a1a;margin-bottom:4px}
+  h2{font-family:'Cinzel',serif;font-size:13px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#8a6a20;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid #e8d8b0}
+  h3{font-family:'Cinzel',serif;font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:4px;letter-spacing:.02em}
+  .meta{font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px}
+  .entry{margin-bottom:24px;padding:18px;border:1px solid #e8d8b0;border-radius:8px;break-inside:avoid}
+  .entry-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:12px}
+  .entry-date{font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;text-align:right;flex-shrink:0}
+  .cat-badge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 7px;border-radius:3px;background:#f5edd8;color:#8a6a20;letter-spacing:.06em;text-transform:uppercase;display:inline-block;margin-bottom:6px}
+  .outcome-pos{color:#166534}.outcome-neg{color:#991b1b}.outcome-mix{color:#92400e}
+  .situation{font-style:italic;color:#444;margin:6px 0}
+  .decision{color:#8a6a20;font-style:italic;margin:4px 0}
+  .outcome-detail{font-size:13px;margin:4px 0}
+  .lesson{background:#faf5e8;border-left:3px solid #c9993a;padding:8px 12px;margin-top:10px;font-size:12.5px;color:#555;border-radius:0 4px 4px 0}
+  .lesson-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#8a6a20;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:3px}
+  .stress-bar{display:flex;gap:2px;margin-top:8px}
+  .pip{width:10px;height:4px;border-radius:1px}
+  .pip-on{background:#8a6a20}.pip-off{background:#e8e0d0}
+  .insight-block{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:18px;margin-bottom:18px;break-inside:avoid}
+  .insight-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#8a6a20;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+  .insight-text{white-space:pre-wrap;font-size:14px;color:#222;line-height:1.75}
+  .bs-card{border:1px solid #e0d0b0;border-radius:8px;padding:14px 18px;margin-bottom:14px;break-inside:avoid}
+  .bs-title{font-family:'Cinzel',serif;font-size:13px;color:#1a1a1a;margin-bottom:6px}
+  .bs-text{font-size:13px;color:#444;line-height:1.6}
+  .bs-evidence{font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;margin-top:6px;border-top:1px solid #eee;padding-top:6px}
+  .sev-high{color:#991b1b;background:#fef2f2}.sev-medium{color:#92400e;background:#fffbeb}.sev-low{color:#166534;background:#f0fdf4}
+  .severity{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 8px;border-radius:3px;display:inline-block;margin-top:6px;letter-spacing:.06em}
+  .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e0d0b0;font-family:'JetBrains Mono',monospace;font-size:8px;color:#bbb;letter-spacing:.06em}
+  @media print{body{padding:20px}h2{break-before:auto}}
+`;
+
+function openExportWindow(title, bodyHtml) {
+  const now = new Date().toLocaleDateString("en-IN", {day:"numeric",month:"long",year:"numeric"});
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${title} — Life Replay OS</title>
+  <style>${EXPORT_CSS}</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div class="meta">Life Replay OS · Exported ${now}</div>
+  ${bodyHtml}
+  <div class="footer">Generated by Life Replay OS · lifeReplayOS.vercel.app</div>
+  <script>setTimeout(()=>window.print(),800)</script>
+</body>
+</html>`;
+  const win = window.open("", "_blank");
+  if (win) { win.document.write(html); win.document.close(); }
+  else alert("Pop-up blocked. Please allow pop-ups for this site and try again.");
+}
+
+// Diary export — full chronological HTML
+function exportDiary(memories, filtered) {
+  const entries = filtered.length > 0 ? filtered : memories;
+  const sorted = [...entries].sort((a,b)=>new Date(a.date)-new Date(b.date));
+
+  // Group by year
+  const byYear = {};
+  sorted.forEach(m => {
+    const y = m.date?.split("-")[0] || "Unknown";
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(m);
+  });
+
+  let body = `<div class="meta">${entries.length} life entries · ${Object.keys(byYear).length} years</div>`;
+  Object.keys(byYear).sort().forEach(year => {
+    body += `<h2>${year}</h2>`;
+    byYear[year].forEach(m => {
+      const outClass = m.outcome==="positive"?"outcome-pos":m.outcome==="negative"?"outcome-neg":"outcome-mix";
+      const outIcon  = m.outcome==="positive"?"✦":m.outcome==="negative"?"✕":"◈";
+      const stressHtml = Array.from({length:10}).map((_,i)=>
+        `<div class="pip ${i<m.stress?"pip-on":"pip-off"}"></div>`).join("");
+      body += `
+<div class="entry">
+  <div class="entry-header">
+    <div>
+      <div class="cat-badge">${m.category}</div>
+      <h3>${m.title}</h3>
+    </div>
+    <div class="entry-date">${m.date}<br/><span class="${outClass}">${outIcon} ${m.outcome}</span></div>
+  </div>
+  ${m.situation?`<div class="situation">${m.situation}</div>`:""}
+  ${m.decision?`<div class="decision">→ ${m.decision}</div>`:""}
+  ${m.outcomeDetail?`<div class="outcome-detail">${m.outcomeDetail}</div>`:""}
+  ${m.learned?`<div class="lesson"><span class="lesson-label">Pattern Extracted</span>${m.learned}</div>`:""}
+  <div class="stress-bar">${stressHtml}<span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#888;margin-left:8px">${m.stress}/10 stress</span></div>
+</div>`;
+    });
+  });
+  openExportWindow("Personal Diary", body);
+}
+
+// Single insight export — for any AI response text
+function exportInsight(title, subtitle, content) {
+  const body = `
+<div class="insight-block">
+  <div class="insight-label">${subtitle}</div>
+  <div class="insight-text">${content}</div>
+</div>`;
+  openExportWindow(title, body);
+}
+
+// Blindspot export — structured cards
+function exportBlindspots(blindspots) {
+  const sevLabel = {high:"● High Impact",medium:"◈ Medium",low:"◇ Low"};
+  let body = "";
+  blindspots.forEach(b => {
+    body += `
+<div class="bs-card">
+  <div style="font-size:20px;margin-bottom:8px">${b.icon||"◉"}</div>
+  <div class="bs-title">${b.title}</div>
+  <div class="bs-text">${b.insight}</div>
+  ${b.evidence?`<div class="bs-evidence">Evidence: ${b.evidence}</div>`:""}
+  <div class="severity sev-${b.severity||"low"}">${sevLabel[b.severity]||"◇ Low"}</div>
+</div>`;
+  });
+  openExportWindow("Blindspot Analysis", body);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPORT BUTTON COMPONENT — reusable small button
+// ─────────────────────────────────────────────────────────────────────────────
+function ExportBtn({ onClick, label="Export PDF" }) {
+  return (
+    <button onClick={onClick}
+      style={{display:"inline-flex",alignItems:"center",gap:"6px",background:"transparent",border:"1px solid rgba(201,153,58,.25)",borderRadius:"7px",padding:"7px 14px",cursor:"pointer",fontFamily:"'Cinzel',serif",fontSize:"9px",letterSpacing:".08em",color:"var(--gold-dim)",textTransform:"uppercase",transition:"all .18s",flexShrink:0}}
+      onMouseOver={e=>{e.currentTarget.style.background="rgba(201,153,58,.1)";e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="rgba(201,153,58,.4)"}}
+      onMouseOut={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="var(--gold-dim)";e.currentTarget.style.borderColor="rgba(201,153,58,.25)"}}>
+      ↓ {label}
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 function DiaryView({ memories, onDelete }) {
   const [search, setSearch] = useState("");
@@ -673,6 +1281,7 @@ function DiaryView({ memories, onDelete }) {
           <div className="view-title">Personal Diary</div>
           <div className="view-subtitle">Your life, chronologically — {memories.length} entries</div>
         </div>
+        <ExportBtn onClick={()=>exportDiary(memories, filtered)} label="Export Diary"/>
       </div>
       <div className="view-body">
         {/* Filter bar */}
@@ -1095,8 +1704,9 @@ Do NOT say "this is just a simulation." Treat it as real analysis.`;
         {error && <ErrBox msg={error}/>}
         {response && !loading && (
           <div className="ai-response red-theme">
-            <div className="ai-response-label red">
-              <div className="ai-pulse red"/>Pre-Mortem Analysis · Failure Reconstructed
+            <div className="ai-response-label red" style={{justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"8px"}}><div className="ai-pulse red"/>Pre-Mortem Analysis · Failure Reconstructed</div>
+              <ExportBtn onClick={()=>exportInsight("Pre-Mortem Analysis",`Decision: ${decision}`,response)} label="Save PDF"/>
             </div>
             <div className="ai-response-text">{response}</div>
             <div style={{marginTop:"18px",padding:"12px 16px",background:"rgba(62,207,108,.06)",border:"1px solid rgba(62,207,108,.15)",borderRadius:"8px",fontSize:"13px",color:"var(--green)",fontStyle:"italic"}}>
@@ -1229,6 +1839,7 @@ Return ONLY the JSON array. Be honest and specific, not generic.`;
                 </div>
               </div>
               <button className="btn-sec" onClick={run} style={{fontSize:"9px",padding:"6px 14px"}}>Re-scan</button>
+              <ExportBtn onClick={()=>exportBlindspots(result)} label="Save PDF"/>
             </div>
 
             <div className="bs-cards">
@@ -1776,7 +2387,13 @@ function DecisionEngineView({ memories }) {
         </div>
         {loading&&<div className="ai-response"><Spinner/></div>}
         {error&&<ErrBox msg={error}/>}
-        {response&&!loading&&<div className="ai-response"><div className="ai-response-label"><div className="ai-pulse gold"/>Analysis Complete</div><div className="ai-response-text">{response}</div></div>}
+        {response&&!loading&&<div className="ai-response">
+          <div className="ai-response-label" style={{justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px"}}><div className="ai-pulse gold"/>Analysis Complete</div>
+            <ExportBtn onClick={()=>exportInsight("Decision Analysis",`Question: ${question}`,response)} label="Save PDF"/>
+          </div>
+          <div className="ai-response-text">{response}</div>
+        </div>}
       </div>
     </div>
   );
@@ -1819,7 +2436,13 @@ function FutureSimView({ memories }) {
         </div>
         {loading&&<div className="ai-response"><Spinner/></div>}
         {error&&<ErrBox msg={error}/>}
-        {response&&!loading&&<div className="ai-response"><div className="ai-response-label"><div className="ai-pulse gold"/>Simulation Complete</div><div className="ai-response-text">{response}</div></div>}
+        {response&&!loading&&<div className="ai-response">
+          <div className="ai-response-label" style={{justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px"}}><div className="ai-pulse gold"/>Simulation Complete</div>
+            <ExportBtn onClick={()=>exportInsight("Future Simulation",`${situation} — Option A: ${optA} vs Option B: ${optB}`,response)} label="Save PDF"/>
+          </div>
+          <div className="ai-response-text">{response}</div>
+        </div>}
       </div>
     </div>
   );
@@ -1910,6 +2533,7 @@ export default function App() {
       case "simulator": return <FutureSimView memories={memories}/>;
       case "premortem": return <PreMortemView memories={memories}/>;
       case "blindspot": return <BlindspotView memories={memories}/>;
+      case "wealth":    return <WealthView/>;
       case "graph":     return <GraphView memories={memories}/>;
       case "import":    return <ImportHubView onImport={addMemory} existingMemories={memories}/>;
       default:          return null;
