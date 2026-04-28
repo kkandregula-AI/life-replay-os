@@ -269,6 +269,34 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .import-summary{background:rgba(62,207,108,.06);border:1px solid rgba(62,207,108,.18);border-radius:10px;padding:14px 18px;margin-top:12px}
 .import-summary-title{font-family:'Cinzel',serif;font-size:11px;color:var(--green);letter-spacing:.06em;margin-bottom:5px}
 
+/* ── DIARY ── */
+.diary-wrap{max-width:680px;margin:0 auto}
+.diary-year{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.2em;color:var(--gold-dim);text-transform:uppercase;padding:24px 0 8px;display:flex;align-items:center;gap:12px}
+.diary-year::after{content:'';flex:1;height:1px;background:var(--border)}
+.diary-entry{display:flex;gap:16px;margin-bottom:2px;padding:14px 0;border-bottom:1px solid rgba(201,153,58,.06)}
+.diary-entry:last-child{border-bottom:none}
+.diary-date-col{width:52px;flex-shrink:0;text-align:right;padding-top:2px}
+.diary-day{font-family:'Cinzel',serif;font-size:22px;font-weight:600;color:var(--gold2);line-height:1}
+.diary-mon{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.diary-line{width:1px;background:linear-gradient(to bottom,var(--gold-dim),transparent);margin:0 8px;flex-shrink:0;min-height:60px}
+.diary-content{flex:1;min-width:0}
+.diary-meta{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.diary-cat{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.04)}
+.diary-outcome-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.diary-title{font-family:'Cinzel',serif;font-size:14px;font-weight:600;color:var(--text);letter-spacing:.02em;margin-bottom:6px;line-height:1.3}
+.diary-body{font-size:13.5px;color:var(--text-dim);line-height:1.7}
+.diary-lesson{margin-top:8px;padding:8px 12px;background:rgba(201,153,58,.05);border-left:2px solid var(--gold-dim);border-radius:0 5px 5px 0;font-size:12px;color:var(--text-dim);line-height:1.5}
+.diary-lesson span{color:var(--gold-dim);font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:3px}
+.diary-stress{display:flex;gap:2px;margin-top:8px}
+.diary-stress-pip{width:8px;height:3px;border-radius:1px}
+.diary-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+.diary-search{flex:1;min-width:160px;background:var(--card);border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--text);font-family:'Crimson Pro',serif;font-size:13px;outline:none}
+.diary-search:focus{border-color:rgba(201,153,58,.3)}
+.diary-search::placeholder{color:var(--text-muted);font-style:italic}
+.diary-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-style:italic;font-size:14px}
+.dup-badge{display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 8px;background:rgba(240,180,41,.1);border:1px solid rgba(240,180,41,.2);border-radius:4px;color:var(--yellow)}
+
+
 /* ── API KEY SETUP SCREEN ── */
 .setup-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
 .setup-card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:40px 36px;width:100%;max-width:480px;box-shadow:0 32px 80px rgba(0,0,0,.7);animation:slideUp .4s ease}
@@ -361,6 +389,7 @@ const NAV = [
   { section: "Core" },
   {id:"dashboard", icon:"◈", label:"Dashboard"},
   {id:"vault",     icon:"◉", label:"Memory Vault"},
+  {id:"diary",     icon:"📖", label:"Personal Diary"},
   { section: "AI Tools" },
   {id:"decision",  icon:"⟁", label:"Decision Engine"},
   {id:"simulator", icon:"◇", label:"Future Simulator"},
@@ -517,69 +546,20 @@ async function callClaudeWithGmail(keywords) {
   const token = await getFreshGmailToken();
   if (!token) throw new Error("Gmail not connected. Please connect your Google account first.");
 
-  // ── Step 1: Search Gmail directly via REST API (no MCP needed) ──
-  const query = keywords.join(" OR ");
-  const searchResp = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const emails = await fetchGmailEmails(token, keywords);
+  if (!emails.length) return [];
 
-  if (!searchResp.ok) {
-    const err = await searchResp.json().catch(()=>({}));
-    if (searchResp.status === 401) throw new Error("Gmail token expired. Please reconnect your Gmail account.");
-    throw new Error(err.error?.message || `Gmail API error ${searchResp.status}`);
-  }
+  const emailContent = emails.map((t,i)=>`=== EMAIL ${i+1} ===\n${t}`).join("\n\n");
 
-  const searchData = await searchResp.json();
-  const messages = searchData.messages || [];
-  if (messages.length === 0) return [];
-
-  // ── Step 2: Fetch top 8 email bodies ──
-  const emailTexts = [];
-  for (const msg of messages.slice(0, 8)) {
-    try {
-      const msgResp = await fetch(
-        `https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full&fields=payload,internalDate`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!msgResp.ok) continue;
-      const msgData = await msgResp.json();
-
-      // Extract text from email parts
-      const extractText = (payload) => {
-        if (!payload) return "";
-        if (payload.body?.data) {
-          try { return atob(payload.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch { return ""; }
-        }
-        if (payload.parts) return payload.parts.map(extractText).join("\n");
-        return "";
-      };
-
-      const subject = msgData.payload?.headers?.find(h => h.name === "Subject")?.value || "No subject";
-      const date    = msgData.internalDate
-        ? new Date(Number(msgData.internalDate)).toISOString().split("T")[0]
-        : "unknown date";
-      const body    = extractText(msgData.payload).slice(0, 1500);
-
-      emailTexts.push(`DATE: ${date}\nSUBJECT: ${subject}\n\n${body}`);
-    } catch { continue; }
-  }
-
-  if (emailTexts.length === 0) return [];
-
-  // ── Step 3: Send email texts to Claude for extraction ──
-  const emailContent = emailTexts.map((t, i) => `=== EMAIL ${i+1} ===\n${t}`).join("\n\n");
-
-  const sys = `You are a life event extractor. Read these real emails and extract each as a structured life memory.
+  const sys = `You are a life event extractor. Read these real emails and extract each important one as a structured life memory.
+Only extract emails that represent real life decisions or events (job offers, loans, investments, medical, legal, rejections, approvals).
+Skip newsletters, promotional emails, and trivial notifications.
 Return ONLY a valid JSON array — no markdown, no explanation:
 [{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]
-If no meaningful life events are found, return [].`;
+If no meaningful life events found, return [].`;
 
-  const raw = await callClaude(sys,
-    `Extract life memories from these emails:\n\n${emailContent}`,
-    2000
-  );
-  const clean = raw.replace(/```json|```/g, "").trim();
+  const raw = await callClaude(sys, `Extract life memories from these emails:\n\n${emailContent}`, 2000);
+  const clean = raw.replace(/```json|```/g,"").trim();
   if (!clean || clean === "[]") return [];
   return JSON.parse(clean);
 }
@@ -682,7 +662,269 @@ async function fetchWithTimeout(url, options, ms = 55000) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API KEY SETUP SCREEN  (shown on first launch, persists to localStorage)
+// DUPLICATE DETECTION
+// ─────────────────────────────────────────────────────────────────────────────
+function normTitle(t="") { return t.toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/\s+/g," ").trim(); }
+function titleSimilarity(a, b) {
+  const na = normTitle(a), nb = normTitle(b);
+  if (na === nb) return 1;
+  const wordsA = new Set(na.split(" ").filter(w=>w.length>3));
+  const wordsB = new Set(nb.split(" ").filter(w=>w.length>3));
+  if (!wordsA.size || !wordsB.size) return 0;
+  let shared = 0;
+  wordsA.forEach(w => { if(wordsB.has(w)) shared++; });
+  return shared / Math.max(wordsA.size, wordsB.size);
+}
+// Returns true if memory is likely a duplicate of an existing one
+function isDuplicate(candidate, existing) {
+  return existing.some(m => {
+    const sim = titleSimilarity(candidate.title, m.title);
+    if (sim > 0.7) return true;
+    // Same date + same category = strong duplicate signal
+    if (candidate.date === m.date && candidate.category === m.category && sim > 0.3) return true;
+    return false;
+  });
+}
+// Filter a batch, returning {unique, dupes}
+function deduplicateBatch(candidates, existing) {
+  const unique = [], dupes = [];
+  const seen = [...existing];
+  candidates.forEach(c => {
+    if (isDuplicate(c, seen)) { dupes.push(c); }
+    else { unique.push(c); seen.push(c); }
+  });
+  return { unique, dupes };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FREE AI FALLBACK  (Chrome built-in Gemini Nano — no API key needed)
+// ─────────────────────────────────────────────────────────────────────────────
+let _nanoSession = null;
+async function getNanoSession() {
+  if (_nanoSession) return _nanoSession;
+  const ai = window.ai || window.chrome?.aiOriginTrial;
+  if (!ai?.languageModel) return null;
+  try {
+    const cap = await ai.languageModel.capabilities();
+    if (cap.available === "no") return null;
+    _nanoSession = await ai.languageModel.create({
+      systemPrompt: "You are a helpful personal decision assistant. Be concise and direct."
+    });
+    return _nanoSession;
+  } catch { return null; }
+}
+
+async function callFreeAI(prompt) {
+  const session = await getNanoSession();
+  if (!session) throw new Error("No free AI available on this device. Please add an Anthropic API key.");
+  const result = await session.prompt(prompt);
+  return result;
+}
+
+// Wrapper: tries Claude first, falls back to Gemini Nano if no API key
+async function callAIWithFallback(system, userMsg, maxTokens = 800) {
+  const key = getStoredKey();
+  if (key) return callClaude(system, userMsg, maxTokens);
+  // No key — try Gemini Nano
+  return callFreeAI(`${system}\n\n${userMsg}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMPROVED GMAIL SCAN — more results, better keyword coverage
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchGmailEmails(token, keywords) {
+  // Build richer query — include subject: prefix for stronger matches
+  const subjectQuery = keywords.map(k => `subject:"${k}"`).join(" OR ");
+  const bodyQuery    = keywords.join(" OR ");
+  const query        = `(${subjectQuery}) OR (${bodyQuery})`;
+
+  // Fetch up to 50 message IDs
+  const searchResp = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!searchResp.ok) {
+    const err = await searchResp.json().catch(()=>({}));
+    if (searchResp.status === 401) throw new Error("Gmail token expired. Please disconnect and reconnect Gmail.");
+    throw new Error(err.error?.message || `Gmail API error ${searchResp.status}`);
+  }
+  const searchData = await searchResp.json();
+  const messages = searchData.messages || [];
+  if (!messages.length) return [];
+
+  // Fetch up to 15 full email bodies in parallel
+  const extractText = (payload) => {
+    if (!payload) return "";
+    if (payload.body?.data) {
+      try { return atob(payload.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch { return ""; }
+    }
+    if (payload.parts) return payload.parts.map(extractText).join("\n");
+    return "";
+  };
+
+  const fetches = messages.slice(0, 15).map(msg =>
+    fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full&fields=payload,internalDate`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    ).then(r => r.ok ? r.json() : null).catch(() => null)
+  );
+  const results = await Promise.all(fetches);
+
+  const emails = [];
+  for (const msgData of results) {
+    if (!msgData) continue;
+    const subject = msgData.payload?.headers?.find(h => h.name==="Subject")?.value || "No subject";
+    const date    = msgData.internalDate
+      ? new Date(Number(msgData.internalDate)).toISOString().split("T")[0]
+      : "unknown date";
+    const body    = extractText(msgData.payload).slice(0, 2000);
+    emails.push(`DATE: ${date}\nSUBJECT: ${subject}\n\n${body}`);
+  }
+  return emails;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSONAL DIARY VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function DiaryView({ memories, onDelete }) {
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("all");
+  const [outcomeFilter, setOutcomeFilter] = useState("all");
+
+  const cats = ["all", ...new Set(memories.map(m => m.category))];
+
+  const filtered = memories
+    .filter(m => {
+      if (catFilter !== "all" && m.category !== catFilter) return false;
+      if (outcomeFilter !== "all" && m.outcome !== outcomeFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return (m.title+m.situation+m.decision+m.learned+m.tags?.join(" ")).toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  // Group by year
+  const byYear = {};
+  filtered.forEach(m => {
+    const y = m.date?.split("-")[0] || "Unknown";
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(m);
+  });
+  const years = Object.keys(byYear).sort((a,b) => b-a);
+
+  const fmtDate = (dateStr) => {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      return { day: d.getDate(), mon: d.toLocaleString("default",{month:"short"}).toUpperCase() };
+    } catch { return { day:"—", mon:"—" }; }
+  };
+
+  return (
+    <div>
+      <div className="view-header">
+        <div>
+          <div className="view-title">Personal Diary</div>
+          <div className="view-subtitle">Your life, chronologically — {memories.length} entries</div>
+        </div>
+      </div>
+      <div className="view-body">
+        {/* Filter bar */}
+        <div className="diary-filter-bar">
+          <input className="diary-search" placeholder="Search your life..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <select className="fs" style={{width:"auto",fontSize:"12px",padding:"7px 10px"}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+            {cats.map(c=><option key={c} value={c}>{c==="all"?"All categories":c}</option>)}
+          </select>
+          <select className="fs" style={{width:"auto",fontSize:"12px",padding:"7px 10px"}} value={outcomeFilter} onChange={e=>setOutcomeFilter(e.target.value)}>
+            <option value="all">All outcomes</option>
+            <option value="positive">✦ Positive</option>
+            <option value="mixed">◈ Mixed</option>
+            <option value="negative">✕ Negative</option>
+          </select>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",flexShrink:0}}>{filtered.length} entries</span>
+        </div>
+
+        {filtered.length === 0 && (
+          <div className="diary-empty">
+            {search ? `No entries match "${search}"` : "No memories yet — import your resume or capture a moment."}
+          </div>
+        )}
+
+        <div className="diary-wrap">
+          {years.map(year => (
+            <div key={year}>
+              <div className="diary-year">{year}</div>
+              {byYear[year].map(m => {
+                const { day, mon } = fmtDate(m.date);
+                const col = CAT_COLORS[m.category] || "#888";
+                const outCol = OUTCOME_COLORS[m.outcome] || "#888";
+                const stressColor = m.stress > 7 ? "var(--red)" : m.stress > 4 ? "var(--yellow)" : "var(--green)";
+                return (
+                  <div key={m.id} className="diary-entry">
+                    {/* Date column */}
+                    <div className="diary-date-col">
+                      <div className="diary-day">{day}</div>
+                      <div className="diary-mon">{mon}</div>
+                    </div>
+
+                    {/* Timeline line */}
+                    <div className="diary-line" style={{background:`linear-gradient(to bottom,${col},transparent)`}}/>
+
+                    {/* Content */}
+                    <div className="diary-content">
+                      <div className="diary-meta">
+                        <div className="diary-cat" style={{color:col}}>{m.category}</div>
+                        <div className="diary-outcome-dot" style={{background:outCol}} title={m.outcome}/>
+                        {m.tags?.slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}
+                      </div>
+                      <div className="diary-title">{m.title}</div>
+                      {m.situation && <div className="diary-body">{m.situation}</div>}
+                      {m.decision && (
+                        <div style={{marginTop:"6px",fontSize:"12.5px",color:"var(--gold-dim)",fontStyle:"italic"}}>
+                          → {m.decision}
+                        </div>
+                      )}
+                      {m.outcomeDetail && (
+                        <div style={{marginTop:"5px",fontSize:"12px",color:outCol,opacity:.8}}>{m.outcomeDetail}</div>
+                      )}
+                      {m.learned && (
+                        <div className="diary-lesson">
+                          <span>Pattern Extracted</span>
+                          {m.learned}
+                        </div>
+                      )}
+                      {/* Stress bar */}
+                      {m.stress > 0 && (
+                        <div className="diary-stress">
+                          {Array.from({length:10}).map((_,i)=>(
+                            <div key={i} className="diary-stress-pip"
+                              style={{background: i < m.stress ? stressColor : "rgba(255,255,255,.06)"}}/>
+                          ))}
+                          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",marginLeft:"6px"}}>{m.stress}/10 stress</span>
+                        </div>
+                      )}
+                      {/* Delete */}
+                      {onDelete && (
+                        <button onClick={()=>onDelete(m.id)}
+                          style={{marginTop:"8px",background:"none",border:"none",color:"rgba(224,92,92,.35)",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",letterSpacing:".05em",padding:"2px 0",transition:"color .15s"}}
+                          onMouseOver={e=>e.target.style.color="rgba(224,92,92,.8)"}
+                          onMouseOut={e=>e.target.style.color="rgba(224,92,92,.35)"}>
+                          ✕ delete entry
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 function SetupScreen({ onKeySet }) {
   const [key, setKey]         = useState("");
@@ -775,19 +1017,24 @@ function SetupScreen({ onKeySet }) {
           🔐 Key stored in your browser's localStorage only. Never sent to any server except Anthropic.
         </div>
 
+        {/* Free AI fallback note */}
+        <div style={{padding:"10px 14px",background:"rgba(91,156,246,.05)",border:"1px solid rgba(91,156,246,.12)",borderRadius:"8px",marginBottom:"16px",fontSize:"12px",color:"rgba(91,156,246,.8)",lineHeight:"1.5"}}>
+          💡 <strong>On Chrome?</strong> You can skip the API key and use Chrome's built-in Gemini Nano AI (free, offline). Add a key later for full power.
+        </div>
+
         {error && (
           <div style={{color:"var(--red)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",padding:"10px 14px",background:"rgba(224,92,92,.08)",borderRadius:"8px",border:"1px solid rgba(224,92,92,.2)",marginBottom:"16px"}}>
             {error}
           </div>
         )}
 
-        <button
-          className="btn-primary"
-          style={{width:"100%",padding:"12px",fontSize:"11px"}}
-          onClick={testAndSave}
-          disabled={!key.trim() || testing}
-        >
-          {testing ? "Validating Key..." : "Activate Life Replay OS →"}
+        <button className="btn-primary" style={{width:"100%",padding:"12px",fontSize:"11px",marginBottom:"10px"}}
+          onClick={testAndSave} disabled={!key.trim()||testing}>
+          {testing ? "Validating Key..." : "Activate with Anthropic Key →"}
+        </button>
+        <button className="btn-sec" style={{width:"100%",fontSize:"10px"}}
+          onClick={()=>onKeySet("__free__")}>
+          Skip — Use Free AI (Chrome / Gemini Nano)
         </button>
       </div>
     </div>
@@ -1302,7 +1549,7 @@ function CaptureModal({ onClose, onSave }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORT HUB
 // ─────────────────────────────────────────────────────────────────────────────
-function ImportHubView({ onImport }) {
+function ImportHubView({ onImport, existingMemories = [] }) {
   const [tab,setTab]=useState("resume");
   const [loading,setLoading]=useState(false);
   const [progress,setProgress]=useState(0);
@@ -1464,7 +1711,17 @@ Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
     return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
   };
 
-  const importSelected=()=>{extracted.filter((_,i)=>selected.has(i)).forEach(m=>onImport(m));setSuccess(`${selected.size} memories imported.`);setExtracted([]);setSelected(new Set());};
+  const importSelected=()=>{
+    const candidates = extracted.filter((_,i)=>selected.has(i));
+    const { unique, dupes } = deduplicateBatch(candidates, existingMemories);
+    unique.forEach(m=>onImport(m));
+    const msg = dupes.length > 0
+      ? `${unique.length} imported · ${dupes.length} skipped as likely duplicates`
+      : `${unique.length} memories imported.`;
+    setSuccess(msg);
+    setExtracted([]);
+    setSelected(new Set());
+  };
   const TABS=[{id:"resume",icon:"📄",label:"Resume / CV"},{id:"paste",icon:"✉️",label:"Paste Document"},{id:"gmail",icon:"📧",label:"Gmail Import"}];
 
   return (
@@ -1577,16 +1834,22 @@ Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
               </div>
             </div>
             <div className="extracted-list">
-              {extracted.map((item,i)=>(
-                <div key={i} className="extracted-item" style={{opacity:selected.has(i)?1:.5}}>
-                  <div className={`ex-check${selected.has(i)?" checked":""}`} onClick={()=>toggleSel(i)}>{selected.has(i)&&"✓"}</div>
-                  <div style={{flex:1}}>
-                    <div className="ex-title">{item.title}</div>
-                    <div className="ex-meta"><span style={{color:CAT_COLORS[item.category]||"#888"}}>{item.category}</span>{" · "}{item.date}{" · "}<span style={{color:OUTCOME_COLORS[item.outcome]}}>{item.outcome}</span></div>
-                    <div className="ex-desc">{item.situation}</div>
+              {extracted.map((item,i)=>{
+                const isDup = isDuplicate(item, existingMemories);
+                return (
+                  <div key={i} className="extracted-item" style={{opacity:selected.has(i)?1:.5}}>
+                    <div className={`ex-check${selected.has(i)?" checked":""}`} onClick={()=>toggleSel(i)}>{selected.has(i)&&"✓"}</div>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+                        <div className="ex-title">{item.title}</div>
+                        {isDup && <span className="dup-badge">⚠ possible duplicate</span>}
+                      </div>
+                      <div className="ex-meta"><span style={{color:CAT_COLORS[item.category]||"#888"}}>{item.category}</span>{" · "}{item.date}{" · "}<span style={{color:OUTCOME_COLORS[item.outcome]}}>{item.outcome}</span></div>
+                      <div className="ex-desc">{item.situation}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="import-actions">
               <button className="btn-primary" onClick={importSelected} disabled={selected.size===0}>Import {selected.size} Selected →</button>
@@ -1825,6 +2088,7 @@ export default function App() {
 
   const addMemory = useCallback(m => {
     setMemories(prev => {
+      if (isDuplicate(m, prev)) return prev; // silent dedup for manual capture
       const updated = [{...m, id:`m${Date.now()}`}, ...prev];
       saveMemories(updated);
       return updated;
@@ -1890,6 +2154,7 @@ export default function App() {
   }
 
   // First-launch: no key stored → show setup screen
+  // __free__ means user chose Gemini Nano — let them through
   if (!apiKey) {
     return (
       <>
@@ -1903,12 +2168,13 @@ export default function App() {
     switch(activeView) {
       case "dashboard": return <DashboardView memories={memories} setView={handleNav} setShowCapture={setShowCapture}/>;
       case "vault":     return <VaultView memories={memories} setShowCapture={setShowCapture} onDelete={deleteMemory}/>;
+      case "diary":     return <DiaryView memories={memories} onDelete={deleteMemory}/>;
       case "decision":  return <DecisionEngineView memories={memories}/>;
       case "simulator": return <FutureSimView memories={memories}/>;
       case "premortem": return <PreMortemView memories={memories}/>;
       case "blindspot": return <BlindspotView memories={memories}/>;
       case "graph":     return <GraphView memories={memories}/>;
-      case "import":    return <ImportHubView onImport={addMemory}/>;
+      case "import":    return <ImportHubView onImport={addMemory} existingMemories={memories}/>;
       default:          return null;
     }
   };
@@ -1985,8 +2251,9 @@ export default function App() {
 
       {/* ── KEY STATUS PILL (always visible top-right) ── */}
       <button className="key-status-btn" onClick={() => setShowKeyModal(true)} title="API Key Settings">
-        <div className={`key-dot${apiKey ? "" : " missing"}`}/>
-        {apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
+        <div className={`key-dot${apiKey && apiKey !== "__free__" ? "" : apiKey === "__free__" ? "" : " missing"}`}
+          style={apiKey === "__free__" ? {background:"var(--blue)"} : {}}/>
+        {apiKey === "__free__" ? "Gemini Nano (free)" : apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
         <span style={{opacity:.5}}>⚙</span>
       </button>
 
