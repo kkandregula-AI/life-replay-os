@@ -269,6 +269,29 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .import-summary{background:rgba(62,207,108,.06);border:1px solid rgba(62,207,108,.18);border-radius:10px;padding:14px 18px;margin-top:12px}
 .import-summary-title{font-family:'Cinzel',serif;font-size:11px;color:var(--green);letter-spacing:.06em;margin-bottom:5px}
 
+/* ── DOCUMENT VAULT ── */
+.doc-category-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:22px}
+.doc-cat-btn{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 12px;cursor:pointer;text-align:center;transition:all .18s}
+.doc-cat-btn:hover,.doc-cat-btn.active{border-color:rgba(201,153,58,.3);background:rgba(201,153,58,.07)}
+.doc-cat-icon{font-size:22px;margin-bottom:6px}
+.doc-cat-name{font-family:'Cinzel',serif;font-size:10px;font-weight:600;color:var(--text);letter-spacing:.04em}
+.doc-cat-count{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);margin-top:3px}
+.doc-upload-area{border:2px dashed rgba(201,153,58,.25);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(201,153,58,.02);margin-bottom:16px}
+.doc-upload-area:hover,.doc-upload-area.drag-over{border-color:rgba(201,153,58,.5);background:rgba(201,153,58,.05)}
+.doc-list{display:flex;flex-direction:column;gap:10px}
+.doc-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;position:relative;transition:border-color .18s}
+.doc-item:hover{border-color:rgba(201,153,58,.22)}
+.doc-file-icon{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;background:rgba(201,153,58,.08)}
+.doc-name{font-family:'Cinzel',serif;font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;line-height:1.3;padding-right:70px}
+.doc-meta{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:4px}
+.doc-notes{font-size:12px;color:var(--text-dim);font-style:italic}
+.doc-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px}
+.doc-btn{padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--card2);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-dim);letter-spacing:.05em;transition:all .15s;text-transform:uppercase}
+.doc-btn:hover{border-color:rgba(201,153,58,.3);color:var(--gold)}
+.doc-btn.del:hover{border-color:rgba(224,92,92,.3);color:var(--red)}
+.doc-scan-panel{background:var(--card2);border:1px solid rgba(201,153,58,.15);border-radius:10px;padding:14px 16px;margin-top:10px}
+.doc-scan-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--gold-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+
 /* ── WEALTH OS ── */
 .wealth-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
 .wtab{padding:10px 16px;cursor:pointer;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.07em;color:var(--text-dim);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .18s;white-space:nowrap}
@@ -434,6 +457,7 @@ const NAV = [
   {id:"blindspot", icon:"◉", label:"Blindspot Detector", theme:"purple"},
   { section: "Finance" },
   {id:"wealth",    icon:"◎", label:"Wealth OS"},
+  {id:"documents", icon:"🗂", label:"Documents"},
   { section: "Data" },
   {id:"graph",     icon:"⬡", label:"Life Graph"},
   {id:"import",    icon:"⊕", label:"Import Hub"},
@@ -632,6 +656,82 @@ async function fetchWithTimeout(url, options, ms = 90000) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// INDEXEDDB — FILE VAULT (stores actual file blobs, up to ~50MB per file)
+// ─────────────────────────────────────────────────────────────────────────────
+const IDB_NAME    = "LifeReplayOS";
+const IDB_VERSION = 1;
+const IDB_STORE   = "documents";
+
+function openIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbSave(record) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(record);
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function idbGet(id) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function idbDelete(id) {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+async function idbGetAll() {
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+// Document metadata stored in localStorage (fast), blobs in IndexedDB
+const DOC_META_KEY = "lros_doc_meta";
+const loadDocMeta  = () => { try { return JSON.parse(localStorage.getItem(DOC_META_KEY)||"[]"); } catch { return []; } };
+const saveDocMeta  = (m) => { try { localStorage.setItem(DOC_META_KEY, JSON.stringify(m)); } catch {} };
+
+// Document categories and types
+const DOC_CATEGORIES = {
+  "Identity":  { icon:"🪪", types:["Aadhaar Card","PAN Card","Voter ID","Passport","Driving License","Birth Certificate","Other ID"] },
+  "Financial": { icon:"💰", types:["Loan Sanction Letter","Loan Statement","Insurance Policy","FD Receipt","Mutual Fund Statement","Bank Statement","Investment Proof","ITR","Form 16","Other Financial"] },
+  "Property":  { icon:"🏠", types:["Sale Deed","Registration Document","NOC","Khata","Encumbrance Certificate","Other Property"] },
+  "Vehicle":   { icon:"🚗", types:["Registration Certificate","Vehicle Insurance","PUC Certificate","Other Vehicle"] },
+  "Medical":   { icon:"🏥", types:["Health Record","Prescription","Lab Report","Discharge Summary","Other Medical"] },
+  "Education": { icon:"🎓", types:["Degree Certificate","Mark Sheet","Bonafide","Migration Certificate","Other Education"] },
+  "Other":     { icon:"📁", types:["Agreement","Power of Attorney","Will","Other"] },
+};
+const fmtFileSize = (bytes) => bytes > 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.round(bytes/1024)} KB`;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WEALTH OS STORAGE
 // ─────────────────────────────────────────────────────────────────────────────
 const WEALTH_KEY = "lros_wealth";
@@ -694,6 +794,275 @@ function deduplicateBatch(candidates, existing) {
     else { unique.push(c); seen.push(c); }
   });
   return { unique, dupes };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT VAULT VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function DocumentVaultView() {
+  const [meta, setMeta]         = useState(loadDocMeta);
+  const [selCat, setSelCat]     = useState("all");
+  const [showUpload, setShowUpload] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const [scanResult, setScanResult] = useState({});   // docId → scan text
+  const [scanning, setScanning]   = useState({});     // docId → bool
+  const [form, setForm] = useState({ name:"", category:"Identity", type:"Aadhaar Card", notes:"" });
+  const fileRef = useRef();
+  const pendingFile = useRef(null);
+
+  const saveMeta = (m) => { saveDocMeta(m); setMeta([...m]); };
+
+  // ── Upload a file
+  const handleFilePicked = (file) => {
+    if (!file) return;
+    pendingFile.current = file;
+    // Pre-fill name from filename
+    const nameGuess = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g," ");
+    setForm(f => ({...f, name: nameGuess}));
+    setShowUpload(true);
+    setUploadErr("");
+  };
+
+  const confirmUpload = async () => {
+    const file = pendingFile.current;
+    if (!file || !form.name.trim()) return;
+    setUploading(true);
+    try {
+      const blob = await file.arrayBuffer();
+      const id   = `doc_${Date.now()}`;
+      await idbSave({ id, blob, mimeType: file.type });
+      const newMeta = [{
+        id, name: form.name.trim(), category: form.category,
+        type: form.type, notes: form.notes,
+        fileName: file.name, fileType: file.type,
+        fileSize: file.size, uploadedAt: new Date().toISOString().split("T")[0],
+      }, ...meta];
+      saveMeta(newMeta);
+      setShowUpload(false);
+      pendingFile.current = null;
+      setForm({ name:"", category:"Identity", type:"Aadhaar Card", notes:"" });
+    } catch(e) { setUploadErr("Upload failed: " + e.message); }
+    finally { setUploading(false); }
+  };
+
+  // ── View / Download
+  const viewDoc = async (doc) => {
+    try {
+      const record = await idbGet(doc.id);
+      if (!record) { alert("File not found. It may have been cleared."); return; }
+      const blob = new Blob([record.blob], { type: record.mimeType || "application/octet-stream" });
+      const url  = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch(e) { alert("Could not open file: " + e.message); }
+  };
+
+  const downloadDoc = async (doc) => {
+    try {
+      const record = await idbGet(doc.id);
+      if (!record) { alert("File not found."); return; }
+      const blob = new Blob([record.blob], { type: record.mimeType || "application/octet-stream" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = doc.fileName || doc.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch(e) { alert("Download failed: " + e.message); }
+  };
+
+  const deleteDoc = async (doc) => {
+    if (!window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
+    await idbDelete(doc.id);
+    saveMeta(meta.filter(m => m.id !== doc.id));
+    setScanResult(s => { const n={...s}; delete n[doc.id]; return n; });
+  };
+
+  // ── Scan with Claude (extract text/details from uploaded doc)
+  const scanDoc = async (doc) => {
+    if (scanning[doc.id]) return;
+    setScanning(s => ({...s, [doc.id]:true}));
+    try {
+      const record = await idbGet(doc.id);
+      if (!record) throw new Error("File not found");
+      // Convert to base64 for Claude
+      const uint8 = new Uint8Array(record.blob);
+      let binary  = "";
+      uint8.forEach(b => binary += String.fromCharCode(b));
+      const base64   = btoa(binary);
+      const mimeType = record.mimeType || "application/pdf";
+      const sys = `You are a document reader. Extract all key information from this document clearly and concisely. Include: document type, issuing authority, ID numbers, dates, names, addresses, amounts, and any other important details. Format as readable text with labels.`;
+      const raw = await callClaudeWithDoc(sys, "Extract all key details from this document.", base64, mimeType, 1000);
+      setScanResult(s => ({...s, [doc.id]: raw}));
+    } catch(e) { setScanResult(s => ({...s, [doc.id]: "Scan failed: " + e.message})); }
+    finally { setScanning(s => ({...s, [doc.id]:false})); }
+  };
+
+  const fileIcon = (mimeType="") => {
+    if (mimeType.includes("pdf"))   return "📄";
+    if (mimeType.includes("image")) return "🖼";
+    if (mimeType.includes("word"))  return "📝";
+    return "📁";
+  };
+
+  // Count per category
+  const catCounts = {};
+  meta.forEach(d => { catCounts[d.category] = (catCounts[d.category]||0) + 1; });
+  const totalCount = meta.length;
+
+  const filtered = selCat === "all" ? meta : meta.filter(d => d.category === selCat);
+
+  // Export doc list
+  const exportDocList = () => {
+    const rows = meta.map(d => `
+<tr>
+  <td>${DOC_CATEGORIES[d.category]?.icon||"📁"} ${d.name}</td>
+  <td>${d.category}</td><td>${d.type}</td>
+  <td>${d.uploadedAt}</td>
+  <td>${fmtFileSize(d.fileSize)}</td>
+  <td style="font-style:italic;color:#666">${d.notes||"—"}</td>
+</tr>`).join("");
+    const body = `
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#f5edd8;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#8a6a20">
+<th style="text-align:left;padding:8px 10px">Document</th><th>Category</th><th>Type</th><th>Date Added</th><th>Size</th><th>Notes</th>
+</tr></thead><tbody>${rows}</tbody></table>`;
+    openExportWindow("Document Vault Index", body);
+  };
+
+  return (
+    <div>
+      <div className="view-header">
+        <div><div className="view-title">Document Vault</div><div className="view-subtitle">{totalCount} documents stored · private · on-device</div></div>
+        <div style={{display:"flex",gap:"8px",marginTop:"4px"}}>
+          <ExportBtn onClick={exportDocList} label="Export Index"/>
+          <button className="btn-primary" onClick={()=>fileRef.current?.click()}>+ Upload</button>
+        </div>
+      </div>
+      <div className="view-body">
+        <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" style={{display:"none"}} onChange={e=>handleFilePicked(e.target.files[0])}/>
+
+        {/* ── UPLOAD MODAL ── */}
+        {showUpload && (
+          <div className="modal-overlay" onClick={()=>setShowUpload(false)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="modal-title">📁 Save Document</div>
+              <div style={{background:"var(--card2)",border:"1px solid var(--border)",borderRadius:"8px",padding:"10px 14px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
+                <strong style={{color:"var(--text)"}}>{pendingFile.current?.name}</strong>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",marginLeft:"8px"}}>{fmtFileSize(pendingFile.current?.size||0)}</span>
+              </div>
+              <div className="fg"><label className="fl">Document Name *</label><input className="fi" placeholder="e.g. My Aadhaar Card" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/></div>
+              <div className="fr">
+                <div className="fg"><label className="fl">Category</label>
+                  <select className="fs" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value,type:DOC_CATEGORIES[e.target.value]?.types[0]||"Other"}))}>
+                    {Object.keys(DOC_CATEGORIES).map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="fg"><label className="fl">Document Type</label>
+                  <select className="fs" value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>
+                    {(DOC_CATEGORIES[form.category]?.types||[]).map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="fg"><label className="fl">Notes (optional)</label><input className="fi" placeholder="e.g. Expires Jan 2034, Joint holder: Spouse" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+              {uploadErr && <ErrBox msg={uploadErr}/>}
+              <div className="modal-actions">
+                <button className="btn-sec" onClick={()=>setShowUpload(false)}>Cancel</button>
+                <button className="btn-primary" onClick={confirmUpload} disabled={!form.name.trim()||uploading}>
+                  {uploading?"Saving...":"Save to Vault →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CATEGORY PILLS ── */}
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"18px",alignItems:"center"}}>
+          <button className={`filter-btn${selCat==="all"?" active":""}`} onClick={()=>setSelCat("all")}>All ({totalCount})</button>
+          {Object.entries(DOC_CATEGORIES).map(([cat,info])=>
+            catCounts[cat] ? (
+              <button key={cat} className={`filter-btn${selCat===cat?" active":""}`} onClick={()=>setSelCat(cat)}>
+                {info.icon} {cat} ({catCounts[cat]})
+              </button>
+            ) : null
+          )}
+        </div>
+
+        {/* ── DROP ZONE (when empty or for upload) ── */}
+        {meta.length === 0 && (
+          <div className={`doc-upload-area${dragOver?" drag-over":""}`}
+            onClick={()=>fileRef.current?.click()}
+            onDragOver={e=>{e.preventDefault();setDragOver(true)}}
+            onDragLeave={()=>setDragOver(false)}
+            onDrop={e=>{e.preventDefault();setDragOver(false);handleFilePicked(e.dataTransfer.files[0]);}}>
+            <div style={{fontSize:"36px",marginBottom:"12px",opacity:.6}}>🗂</div>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:"13px",color:"var(--gold)",letterSpacing:".04em",marginBottom:"6px"}}>Drop documents here</div>
+            <div style={{fontSize:"12px",color:"var(--text-muted)",fontStyle:"italic"}}>PDF · Images · Word docs · Aadhaar · PAN · Insurance · Loans</div>
+          </div>
+        )}
+
+        {/* ── CATEGORY GUIDE (when empty) ── */}
+        {meta.length === 0 && (
+          <div className="doc-category-grid">
+            {Object.entries(DOC_CATEGORIES).map(([cat,info])=>(
+              <div key={cat} className="doc-cat-btn" onClick={()=>fileRef.current?.click()}>
+                <div className="doc-cat-icon">{info.icon}</div>
+                <div className="doc-cat-name">{cat}</div>
+                <div className="doc-cat-count">{info.types.slice(0,2).join(", ")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── DOCUMENT LIST ── */}
+        {filtered.length > 0 && (
+          <div className="doc-list">
+            {filtered.map(doc => (
+              <div key={doc.id} className="doc-item">
+                <div className="doc-file-icon">{fileIcon(doc.fileType)}</div>
+                <div style={{flex:1,minWidth:0,paddingRight:"90px"}}>
+                  <div className="doc-name">{doc.name}</div>
+                  <div className="doc-meta">
+                    {DOC_CATEGORIES[doc.category]?.icon} {doc.category} · {doc.type} · {doc.uploadedAt} · {fmtFileSize(doc.fileSize)}
+                  </div>
+                  {doc.notes && <div className="doc-notes">{doc.notes}</div>}
+
+                  {/* Scan result */}
+                  {scanResult[doc.id] && (
+                    <div className="doc-scan-panel">
+                      <div className="doc-scan-label">◈ Extracted Details</div>
+                      <div style={{fontSize:"12.5px",color:"var(--text-dim)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{scanResult[doc.id]}</div>
+                    </div>
+                  )}
+
+                  {/* Action row */}
+                  <div style={{display:"flex",gap:"6px",marginTop:"10px",flexWrap:"wrap"}}>
+                    <button className="doc-btn" onClick={()=>viewDoc(doc)}>👁 View</button>
+                    <button className="doc-btn" onClick={()=>downloadDoc(doc)}>↓ Download</button>
+                    <button className="doc-btn" onClick={()=>scanDoc(doc)} disabled={scanning[doc.id]}>
+                      {scanning[doc.id] ? "Scanning..." : "◈ Scan & Extract"}
+                    </button>
+                    <button className="doc-btn del" onClick={()=>deleteDoc(doc)}>✕ Delete</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {filtered.length === 0 && meta.length > 0 && (
+          <div className="empty-state"><div className="empty-icon">📁</div><div className="empty-title">No {selCat} documents</div><div className="empty-desc">Upload one using the button above</div></div>
+        )}
+
+        {/* Privacy note */}
+        <div style={{marginTop:"24px",padding:"12px 16px",background:"rgba(62,207,108,.04)",border:"1px solid rgba(62,207,108,.1)",borderRadius:"8px",fontSize:"12px",color:"rgba(62,207,108,.7)",display:"flex",alignItems:"flex-start",gap:"8px"}}>
+          <span style={{flexShrink:0}}>🔐</span>
+          <span>All documents are stored <strong>only on this device</strong> using your browser's IndexedDB. They never leave your device unless you explicitly download or view them. Clearing browser data will delete stored files.</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2534,6 +2903,7 @@ export default function App() {
       case "premortem": return <PreMortemView memories={memories}/>;
       case "blindspot": return <BlindspotView memories={memories}/>;
       case "wealth":    return <WealthView/>;
+      case "documents": return <DocumentVaultView/>;
       case "graph":     return <GraphView memories={memories}/>;
       case "import":    return <ImportHubView onImport={addMemory} existingMemories={memories}/>;
       default:          return null;
