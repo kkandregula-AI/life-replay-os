@@ -424,52 +424,6 @@ const clearKey     = ()  => { try { localStorage.removeItem(KEY_STORAGE); } catc
 // ─────────────────────────────────────────────────────────────────────────────
 // GMAIL OAUTH STORAGE
 // ─────────────────────────────────────────────────────────────────────────────
-const GMAIL_TOKEN_KEY   = "lros_gmail_token";
-const GMAIL_REFRESH_KEY = "lros_gmail_refresh";
-const GMAIL_EXPIRY_KEY  = "lros_gmail_expiry";
-
-const getGmailToken   = () => { try { return localStorage.getItem(GMAIL_TOKEN_KEY) || ""; } catch { return ""; } };
-const getGmailRefresh = () => { try { return localStorage.getItem(GMAIL_REFRESH_KEY) || ""; } catch { return ""; } };
-const getGmailExpiry  = () => { try { return Number(localStorage.getItem(GMAIL_EXPIRY_KEY)) || 0; } catch { return 0; } };
-
-const saveGmailTokens = ({ access_token, refresh_token, expires_in }) => {
-  try {
-    localStorage.setItem(GMAIL_TOKEN_KEY,   access_token);
-    if (refresh_token) localStorage.setItem(GMAIL_REFRESH_KEY, refresh_token);
-    localStorage.setItem(GMAIL_EXPIRY_KEY, String(Date.now() + expires_in * 1000));
-  } catch {}
-};
-
-const clearGmailTokens = () => {
-  try {
-    localStorage.removeItem(GMAIL_TOKEN_KEY);
-    localStorage.removeItem(GMAIL_REFRESH_KEY);
-    localStorage.removeItem(GMAIL_EXPIRY_KEY);
-  } catch {}
-};
-
-const isGmailConnected = () => Boolean(getGmailToken());
-
-// Refresh token if expired (within 5 min of expiry)
-const getFreshGmailToken = async () => {
-  const expiry = getGmailExpiry();
-  if (expiry && Date.now() < expiry - 5 * 60 * 1000) return getGmailToken();
-  const refresh = getGmailRefresh();
-  if (!refresh) return "";
-  try {
-    const resp = await fetch("/api/auth/refresh", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
-    const data = await resp.json();
-    if (data.access_token) {
-      saveGmailTokens({ access_token: data.access_token, expires_in: data.expires_in });
-      return data.access_token;
-    }
-  } catch {}
-  return getGmailToken();
-};
-
 function apiHeaders() {
   const k = getStoredKey();
   return { "Content-Type": "application/json", ...(k ? { "x-user-api-key": k } : {}) };
@@ -540,28 +494,6 @@ async function callClaudeWithDoc(system, userMsg, base64Data, mediaType, maxToke
   const data = await resp.json();
   if (data.error) throw new Error(errMsg(data.error));
   return data.content[0].text;
-}
-
-async function callClaudeWithGmail(keywords) {
-  const token = await getFreshGmailToken();
-  if (!token) throw new Error("Gmail not connected. Please connect your Google account first.");
-
-  const emails = await fetchGmailEmails(token, keywords);
-  if (!emails.length) return [];
-
-  const emailContent = emails.map((t,i)=>`=== EMAIL ${i+1} ===\n${t}`).join("\n\n");
-
-  const sys = `You are a life event extractor. Read these real emails and extract each important one as a structured life memory.
-Only extract emails that represent real life decisions or events (job offers, loans, investments, medical, legal, rejections, approvals).
-Skip newsletters, promotional emails, and trivial notifications.
-Return ONLY a valid JSON array — no markdown, no explanation:
-[{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]
-If no meaningful life events found, return [].`;
-
-  const raw = await callClaude(sys, `Extract life memories from these emails:\n\n${emailContent}`, 2000);
-  const clean = raw.replace(/```json|```/g,"").trim();
-  if (!clean || clean === "[]") return [];
-  return JSON.parse(clean);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -647,7 +579,7 @@ function acquireLock(key) {
 function releaseLock(key) { delete _locks[key]; }
 
 // Timeout wrapper — cancels fetch after `ms` milliseconds
-async function fetchWithTimeout(url, options, ms = 55000) {
+async function fetchWithTimeout(url, options, ms = 90000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -656,7 +588,7 @@ async function fetchWithTimeout(url, options, ms = 55000) {
     return resp;
   } catch(e) {
     clearTimeout(timer);
-    if (e.name === "AbortError") throw new Error("Request timed out after 55s. Try again.");
+    if (e.name === "AbortError") throw new Error("Request timed out. For large documents, try a shorter resume or use the Paste Document tab.");
     throw e;
   }
 }
@@ -727,60 +659,6 @@ async function callAIWithFallback(system, userMsg, maxTokens = 800) {
   if (key) return callClaude(system, userMsg, maxTokens);
   // No key — try Gemini Nano
   return callFreeAI(`${system}\n\n${userMsg}`);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IMPROVED GMAIL SCAN — more results, better keyword coverage
-// ─────────────────────────────────────────────────────────────────────────────
-async function fetchGmailEmails(token, keywords) {
-  // Build richer query — include subject: prefix for stronger matches
-  const subjectQuery = keywords.map(k => `subject:"${k}"`).join(" OR ");
-  const bodyQuery    = keywords.join(" OR ");
-  const query        = `(${subjectQuery}) OR (${bodyQuery})`;
-
-  // Fetch up to 50 message IDs
-  const searchResp = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!searchResp.ok) {
-    const err = await searchResp.json().catch(()=>({}));
-    if (searchResp.status === 401) throw new Error("Gmail token expired. Please disconnect and reconnect Gmail.");
-    throw new Error(err.error?.message || `Gmail API error ${searchResp.status}`);
-  }
-  const searchData = await searchResp.json();
-  const messages = searchData.messages || [];
-  if (!messages.length) return [];
-
-  // Fetch up to 15 full email bodies in parallel
-  const extractText = (payload) => {
-    if (!payload) return "";
-    if (payload.body?.data) {
-      try { return atob(payload.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch { return ""; }
-    }
-    if (payload.parts) return payload.parts.map(extractText).join("\n");
-    return "";
-  };
-
-  const fetches = messages.slice(0, 15).map(msg =>
-    fetch(
-      `https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full&fields=payload,internalDate`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    ).then(r => r.ok ? r.json() : null).catch(() => null)
-  );
-  const results = await Promise.all(fetches);
-
-  const emails = [];
-  for (const msgData of results) {
-    if (!msgData) continue;
-    const subject = msgData.payload?.headers?.find(h => h.name==="Subject")?.value || "No subject";
-    const date    = msgData.internalDate
-      ? new Date(Number(msgData.internalDate)).toISOString().split("T")[0]
-      : "unknown date";
-    const body    = extractText(msgData.payload).slice(0, 2000);
-    emails.push(`DATE: ${date}\nSUBJECT: ${subject}\n\n${body}`);
-  }
-  return emails;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1559,275 +1437,121 @@ function ImportHubView({ onImport, existingMemories = [] }) {
   const [success,setSuccess]=useState("");
   const [pasteText,setPasteText]=useState("");
   const [dragOver,setDragOver]=useState(false);
-  const [gmailKeywords,setGmailKeywords]=useState(new Set(["offer letter","loan","salary","investment","job"]));
-  const [gmailConnected, setGmailConnected] = useState(isGmailConnected);
-  const [connectingGmail, setConnectingGmail] = useState(false);
   const fileRef=useRef();
-  const ALL_KEYWORDS=["offer letter","loan","salary","investment","job","rejection","approval","insurance","promotion","contract","medical","visa","resignation","admission"];
+
   const reset=()=>{setExtracted([]);setSelected(new Set());setError("");setSuccess("");setProgress(0);};
-  const toggleKw=k=>setGmailKeywords(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});
   const toggleSel=i=>setSelected(p=>{const n=new Set(p);n.has(i)?n.delete(i):n.add(i);return n;});
+
   const parseItems = (raw) => {
-    // Strategy 1: strip code fences, parse directly
-    try {
-      const clean = raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m =>
-        m.replace(/```json|```/g, "")
-      ).trim();
-      const p = JSON.parse(clean);
-      return Array.isArray(p) ? p : [p];
-    } catch {}
-
-    // Strategy 2: extract first [...] block with regex
-    try {
-      const match = raw.match(/\[[\s\S]*\]/);
-      if (match) {
-        const p = JSON.parse(match[0]);
-        return Array.isArray(p) ? p : [p];
-      }
-    } catch {}
-
-    // Strategy 3: fix common LLM JSON mistakes then parse
-    try {
-      const match = raw.match(/\[[\s\S]*\]/);
-      if (match) {
-        const fixed = match[0]
-          .replace(/,\s*([}\]])/g, "$1")          // trailing commas
-          .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // unquoted keys
-          .replace(/:\s*'([^']*)'/g, ':"$1"');     // single-quoted values
-        const p = JSON.parse(fixed);
-        return Array.isArray(p) ? p : [p];
-      }
-    } catch {}
-
-    // Strategy 4: extract individual {...} objects manually
-    try {
-      const objects = [];
-      const objMatches = raw.matchAll(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g);
-      for (const m of objMatches) {
-        try { objects.push(JSON.parse(m[0])); } catch {}
-      }
-      if (objects.length > 0) return objects;
-    } catch {}
-
-    throw new Error("Could not parse AI response as JSON. The AI may have returned unexpected text. Please try again.");
-  };
-
-  // Kick off Google OAuth — get auth URL from server, redirect
-  const handleGmailConnect = async () => {
-    setConnectingGmail(true);
-    try {
-      const resp = await fetch("/api/auth/google");
-      const data = await resp.json();
-      if (data.error) throw new Error(data.error);
-      window.location.href = data.url; // redirect to Google login
-    } catch(e) {
-      setError("Could not start Gmail login: " + e.message);
-      setConnectingGmail(false);
-    }
-  };
-
-  // Real Gmail scan using OAuth token
-  const handleGmailScan = async () => {
-    if (gmailKeywords.size===0) return;
-    reset(); setLoading(true); setProgress(20);
-    try {
-      setProgress(45);
-      const items = await callClaudeWithGmail([...gmailKeywords]);
-      setProgress(85);
-      setExtracted(items);
-      setSelected(new Set(items.map((_,i)=>i)));
-      setProgress(100);
-    } catch(e) {
-      if (e.message.includes("not connected")) {
-        setGmailConnected(false); clearGmailTokens();
-      }
-      setError("Gmail scan failed: " + e.message);
-    } finally { setLoading(false); }
+    try { const c=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,"")).trim(); const p=JSON.parse(c); return Array.isArray(p)?p:[p]; } catch {}
+    try { const m=raw.match(/\[[\s\S]*\]/); if(m){const p=JSON.parse(m[0]);return Array.isArray(p)?p:[p];} } catch {}
+    try { const m=raw.match(/\[[\s\S]*\]/); if(m){const f=m[0].replace(/,\s*([}\]])/g,"$1").replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":'); const p=JSON.parse(f);return Array.isArray(p)?p:[p];} } catch {}
+    try { const obs=[]; for(const m of raw.matchAll(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g)){try{obs.push(JSON.parse(m[0]));}catch{}} if(obs.length>0)return obs; } catch {}
+    throw new Error("Could not parse AI response. Please try again.");
   };
 
   const handleFile = async file => {
     if (!file) return;
-    // Read file FIRST before any state changes — mobile Safari loses file ref after setState
     let base64;
     try {
       base64 = await new Promise((res, rej) => {
         const reader = new FileReader();
         reader.onload  = () => res(reader.result.split(",")[1]);
-        reader.onerror = () => rej(new Error("Could not read file. Try selecting it again."));
+        reader.onerror = () => rej(new Error("Could not read file. Please try selecting it again."));
         reader.readAsDataURL(file);
       });
-    } catch(e) {
-      setError(e.message);
-      return;
-    }
-    reset(); setLoading(true); setProgress(20);
+    } catch(e) { setError(e.message); return; }
+
+    reset(); setLoading(true); setProgress(15);
     try {
-      setProgress(50);
-      const sys = `You are a life intelligence extractor reading a resume/CV. Extract the COMPLETE picture of this person — not just job titles, but who they are, what decisions shaped them.
-
-Extract ALL as separate life memory entries:
-1. Every work role/position (internships, freelance, consulting)
-2. Every educational qualification (degree, diploma, certification)
-3. Every major achievement or recognition (award, promotion, patent)
-4. Every career transition or pivot
-5. Key skills/capabilities developed at each stage
-
-For EACH entry infer deeply:
-- situation: What was happening in their life at that point? What challenge or opportunity?
-- decision: What did they choose?
-- outcomeDetail: Specific results, duration, achievements from the resume
-- learned: The deep personal/professional insight this built
-
-Return ONLY valid JSON array, no markdown:
-[{"title":"Role at Company or Degree at Institution","date":"YYYY-MM-DD","category":"career|learning|other","situation":"Rich context","decision":"What they chose","outcome":"positive|negative|mixed","outcomeDetail":"Specific results","learned":"Deep insight","tags":["skill"],"stress":4}]
-
-Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
-
-      const raw = await callClaudeWithDoc(sys,
-        "Extract every role, degree, certification, achievement and transition as rich life memories. Return only JSON array.",
-        base64, "application/pdf", 4000);
+      setProgress(40);
+      const sys = `Extract career roles, education degrees, certifications, and achievements from this resume as life memories.
+Return ONLY a valid JSON array, no markdown:
+[{"title":"Role/Degree at Org","date":"YYYY-MM-DD","category":"career|learning","situation":"Context of this period","decision":"What they chose","outcome":"positive|mixed|negative","outcomeDetail":"Duration and achievements","learned":"Key insight gained","tags":["skill"],"stress":4}]
+Rules: Extract 6-15 entries. Keep each field under 100 words. Estimate dates if not shown. Return only the JSON array.`;
+      const raw = await callClaudeWithDoc(sys, "Extract career and education events. JSON array only.", base64, "application/pdf", 2500);
       setProgress(85);
       const items = parseItems(raw);
       setExtracted(items);
-      setSelected(new Set(items.map((_,i) => i)));
+      setSelected(new Set(items.map((_,i)=>i)));
       setProgress(100);
     } catch(e) { setError("Extraction failed: " + e.message); }
     finally { setLoading(false); }
   };
 
-  const handlePaste=async()=>{
+  const handlePaste = async () => {
     if(!pasteText.trim()) return; reset(); setLoading(true); setProgress(30);
-    try{
-      const sys=`Extract life events from this document. Return ONLY valid JSON array: [{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]`;
-      const raw=await callClaude(sys,`Extract life memories from:\n\n${pasteText}`);
-      setProgress(85);const items=parseItems(raw);setExtracted(items);setSelected(new Set(items.map((_,i)=>i)));setProgress(100);
-    }catch(e){setError("Extraction failed: "+e.message);}finally{setLoading(false);}
-  };
-
-  // Gmail: build a search URL for the selected keywords, open in browser
-  // User copies email text, pastes into Paste tab — no OAuth needed
-  const gmailSearchUrl = () => {
-    const q = [...gmailKeywords].join(" OR ");
-    return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(q)}`;
+    try {
+      const sys=`Extract life events from this document. Return ONLY valid JSON array:
+[{"title":"","date":"YYYY-MM-DD","category":"career|finance|relationships|health|learning|other","situation":"","decision":"","outcome":"positive|negative|mixed","outcomeDetail":"","learned":"","tags":[],"stress":5}]
+Return only the JSON array, nothing else.`;
+      const raw=await callClaude(sys,`Extract life memories from:\n\n${pasteText}`, 1500);
+      setProgress(85);
+      const items=parseItems(raw);
+      setExtracted(items);
+      setSelected(new Set(items.map((_,i)=>i)));
+      setProgress(100);
+    } catch(e) { setError("Extraction failed: "+e.message); }
+    finally { setLoading(false); }
   };
 
   const importSelected=()=>{
-    const candidates = extracted.filter((_,i)=>selected.has(i));
-    const { unique, dupes } = deduplicateBatch(candidates, existingMemories);
+    const candidates=extracted.filter((_,i)=>selected.has(i));
+    const {unique,dupes}=deduplicateBatch(candidates,existingMemories);
     unique.forEach(m=>onImport(m));
-    const msg = dupes.length > 0
-      ? `${unique.length} imported · ${dupes.length} skipped as likely duplicates`
-      : `${unique.length} memories imported.`;
-    setSuccess(msg);
-    setExtracted([]);
-    setSelected(new Set());
+    setSuccess(dupes.length>0?`${unique.length} imported · ${dupes.length} skipped as likely duplicates`:`${unique.length} memories imported.`);
+    setExtracted([]); setSelected(new Set());
   };
-  const TABS=[{id:"resume",icon:"📄",label:"Resume / CV"},{id:"paste",icon:"✉️",label:"Paste Document"},{id:"gmail",icon:"📧",label:"Gmail Import"}];
+
+  const TABS=[{id:"resume",icon:"📄",label:"Resume / CV"},{id:"paste",icon:"✉️",label:"Paste Document"}];
 
   return (
     <div>
-      <div className="view-header"><div><div className="view-title">Import Hub</div><div className="view-subtitle">Auto-extract life memories from documents and inbox</div></div></div>
+      <div className="view-header"><div><div className="view-title">Import Hub</div><div className="view-subtitle">Extract life memories from your documents</div></div></div>
       <div className="view-body">
         <div className="import-tabs">{TABS.map(t=><div key={t.id} className={`itab${tab===t.id?" active":""}`} onClick={()=>{setTab(t.id);reset();}}><span style={{fontSize:"16px",display:"block",marginBottom:"4px"}}>{t.icon}</span>{t.label}</div>)}</div>
 
-        {/* ── RESUME TAB ── */}
         {tab==="resume"&&(
           <div>
             <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
-              Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude extracts every role as a dated memory.
+              Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude extracts every role, degree, and achievement as dated memories. Takes up to 60 seconds.
             </div>
             <div className={`drop-zone${dragOver?" drag-over":""}`} onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}>
               <div className="drop-icon">📄</div>
               <div className="drop-title">Drop your Resume PDF here</div>
-              <div className="drop-desc">or click to browse</div>
+              <div className="drop-desc">or click to browse · PDF only</div>
               <input ref={fileRef} className="file-input" type="file" accept=".pdf" onChange={e=>handleFile(e.target.files[0])}/>
             </div>
           </div>
         )}
 
-        {/* ── PASTE TAB ── */}
         {tab==="paste"&&(
           <div>
             <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
-              Paste any <strong style={{color:"var(--text)"}}>email or document text</strong> — loan letters, job offers, investment confirmations.
+              Paste any <strong style={{color:"var(--text)"}}>text</strong> — email, letter, certificate, bank statement, job offer. Claude extracts key life events and dates automatically.
             </div>
-            <textarea className="ai-textarea" rows={10} placeholder={"Paste email or document text here...\n\nExample:\nDear Krishnamurthy,\nWe are pleased to confirm your home loan of ₹45,00,000 approved on 15 March 2023..."} value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{marginBottom:"12px",minHeight:"200px"}}/>
+            <textarea className="ai-textarea" rows={10} placeholder={"Paste text here...\n\nExamples:\n• Job offer letter\n• Loan approval email\n• Investment confirmation\n• Any important document"} value={pasteText} onChange={e=>setPasteText(e.target.value)} style={{marginBottom:"12px",minHeight:"180px"}}/>
             <button className="btn-primary" onClick={handlePaste} disabled={!pasteText.trim()||loading}>{loading?"Extracting...":"Extract Memories →"}</button>
           </div>
         )}
 
-        {/* ── GMAIL TAB — Real OAuth ── */}
-        {tab==="gmail"&&(
-          <div>
-            {gmailConnected ? (
-              /* ── CONNECTED STATE ── */
-              <div>
-                <div style={{background:"rgba(62,207,108,.05)",border:"1px solid rgba(62,207,108,.2)",borderRadius:"11px",padding:"14px 18px",marginBottom:"18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                    <span style={{fontSize:"18px"}}>📧</span>
-                    <div>
-                      <div style={{fontFamily:"'Cinzel',serif",fontSize:"11px",color:"var(--green)",letterSpacing:".06em"}}>Gmail Connected</div>
-                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",marginTop:"2px"}}>Gmail REST API · read-only access</div>
-                    </div>
-                  </div>
-                  <button onClick={()=>{clearGmailTokens();setGmailConnected(false);reset();}}
-                    style={{background:"none",border:"1px solid rgba(224,92,92,.2)",borderRadius:"6px",padding:"4px 10px",color:"rgba(224,92,92,.6)",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",cursor:"pointer"}}>
-                    Disconnect
-                  </button>
-                </div>
-
-                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8.5px",color:"var(--text-muted)",letterSpacing:".1em",textTransform:"uppercase",marginBottom:"8px"}}>Select keywords to scan for</div>
-                <div className="keyword-chips" style={{marginBottom:"14px"}}>
-                  {ALL_KEYWORDS.map(k=><div key={k} className={`kchip${gmailKeywords.has(k)?" active":""}`} onClick={()=>toggleKw(k)}>{k}</div>)}
-                </div>
-                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",marginBottom:"16px"}}>{gmailKeywords.size} keywords selected</div>
-                <button className="btn-primary" onClick={handleGmailScan} disabled={gmailKeywords.size===0||loading}>
-                  {loading ? "Scanning Inbox..." : `Scan Gmail for ${gmailKeywords.size} Keywords →`}
-                </button>
-              </div>
-            ) : (
-              /* ── CONNECT STATE ── */
-              <div>
-                <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"12px",padding:"24px",textAlign:"center",marginBottom:"16px"}}>
-                  <div style={{fontSize:"36px",marginBottom:"12px"}}>📧</div>
-                  <div style={{fontFamily:"'Cinzel',serif",fontSize:"15px",color:"var(--text)",letterSpacing:".04em",marginBottom:"8px"}}>Connect Your Gmail</div>
-                  <div style={{fontSize:"13px",color:"var(--text-dim)",lineHeight:"1.6",marginBottom:"20px",fontStyle:"italic"}}>
-                    Grant read-only access so Claude can scan your inbox for offer letters, loan approvals, investments, and other life events — and auto-extract them as memories.
-                  </div>
-                  <button className="btn-primary" onClick={handleGmailConnect} disabled={connectingGmail} style={{margin:"0 auto"}}>
-                    {connectingGmail ? "Redirecting to Google..." : "Connect Gmail with Google →"}
-                  </button>
-                </div>
-
-                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-                  {[
-                    {icon:"🔒", text:"Read-only access — Life Replay OS can never send or delete emails"},
-                    {icon:"🔑", text:"Token stored only in your browser — never on any server"},
-                    {icon:"👤", text:"Only your own account — no third-party data sharing"},
-                  ].map((item,i)=>(
-                    <div key={i} style={{display:"flex",gap:"10px",padding:"10px 14px",background:"var(--card)",borderRadius:"8px",border:"1px solid var(--border)"}}>
-                      <span style={{fontSize:"14px",flexShrink:0}}>{item.icon}</span>
-                      <span style={{fontSize:"12.5px",color:"var(--text-dim)",lineHeight:"1.5"}}>{item.text}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{marginTop:"14px",padding:"10px 14px",background:"rgba(240,180,41,.04)",border:"1px solid rgba(240,180,41,.12)",borderRadius:"8px",fontSize:"11.5px",color:"rgba(240,180,41,.7)",fontFamily:"'JetBrains Mono',monospace",letterSpacing:".03em"}}>
-                  ⚠ App is in Google testing mode — only added test users can connect. Make sure your Gmail is listed under OAuth Consent Screen → Test Users.
-                </div>
-              </div>
-            )}
+        {loading&&(
+          <div style={{marginTop:"20px"}}>
+            <div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",marginTop:"6px"}}>
+              {tab==="resume"
+                ? progress<50 ? "Reading PDF..." : progress<85 ? "Extracting career timeline..." : "Almost done..."
+                : "Extracting life events..."}
+            </div>
           </div>
         )}
-
-        {loading&&(<div style={{marginTop:"20px"}}><div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{tab==="resume"?"Parsing resume...":"Extracting life events from document..."}</div></div>)}
         {error&&<ErrBox msg={error}/>}
         {success&&<div className="import-summary"><div className="import-summary-title">✦ Import Complete</div><div style={{fontSize:"13px",color:"var(--text-dim)"}}>{success}</div></div>}
 
         {extracted.length>0&&!loading&&(
           <div style={{marginTop:"20px"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
-              <div className="section-title" style={{margin:0}}>{extracted.length} Events Extracted</div>
+              <div className="section-title" style={{margin:0}}>{extracted.length} Events Found</div>
               <div style={{display:"flex",gap:"8px"}}>
                 <button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set(extracted.map((_,i)=>i)))}>All</button>
                 <button className="btn-sec" style={{padding:"5px 12px",fontSize:"9px"}} onClick={()=>setSelected(new Set())}>None</button>
@@ -1835,14 +1559,14 @@ Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
             </div>
             <div className="extracted-list">
               {extracted.map((item,i)=>{
-                const isDup = isDuplicate(item, existingMemories);
-                return (
+                const isDup=isDuplicate(item,existingMemories);
+                return(
                   <div key={i} className="extracted-item" style={{opacity:selected.has(i)?1:.5}}>
                     <div className={`ex-check${selected.has(i)?" checked":""}`} onClick={()=>toggleSel(i)}>{selected.has(i)&&"✓"}</div>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
                         <div className="ex-title">{item.title}</div>
-                        {isDup && <span className="dup-badge">⚠ possible duplicate</span>}
+                        {isDup&&<span className="dup-badge">⚠ possible duplicate</span>}
                       </div>
                       <div className="ex-meta"><span style={{color:CAT_COLORS[item.category]||"#888"}}>{item.category}</span>{" · "}{item.date}{" · "}<span style={{color:OUTCOME_COLORS[item.outcome]}}>{item.outcome}</span></div>
                       <div className="ex-desc">{item.situation}</div>
@@ -1851,13 +1575,99 @@ Extract 8-20 entries. Be specific — this is their personal AI memory bank.`;
                 );
               })}
             </div>
-            <div className="import-actions">
+            <div style={{display:"flex",gap:"10px",marginTop:"16px",alignItems:"center"}}>
               <button className="btn-primary" onClick={importSelected} disabled={selected.size===0}>Import {selected.size} Selected →</button>
               <button className="btn-sec" onClick={reset}>Clear</button>
+              <span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{selected.size} of {extracted.length} selected</span>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY REFLECTION
+// ─────────────────────────────────────────────────────────────────────────────
+function getDailyMemory(memories) {
+  if (!memories.length) return null;
+  // Pick consistently based on day of year — changes every day, not random
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  return memories[dayOfYear % memories.length];
+}
+
+function DailyReflectionCard({ memories }) {
+  const [reflection, setReflection] = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState("");
+  const [expanded, setExpanded]     = useState(false);
+  const memory = getDailyMemory(memories);
+
+  if (!memory) return null;
+
+  const col = CAT_COLORS[memory.category] || "#888";
+  const outCol = OUTCOME_COLORS[memory.outcome] || "#888";
+
+  const getReflection = async () => {
+    if (loading || reflection) { setExpanded(e => !e); return; }
+    if (!acquireLock("reflection")) return;
+    setLoading(true); setError(""); setExpanded(true);
+    try {
+      const sys = `You are a personal life coach. Given one past life event, generate a single powerful reflection question or insight (2-3 sentences max) that helps the person connect this past experience to their present. Be personal, specific, and thought-provoking. No generic advice.`;
+      const msg = `Past event: "${memory.title}" (${memory.date})
+Situation: ${memory.situation}
+Outcome: ${memory.outcome} — ${memory.outcomeDetail}
+Lesson noted: ${memory.learned}
+
+Generate one short personal reflection for today.`;
+      const res = await callAIWithFallback(sys, msg, 300);
+      setReflection(res);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); releaseLock("reflection"); }
+  };
+
+  return (
+    <div style={{background:"linear-gradient(135deg,rgba(201,153,58,.06) 0%,rgba(16,18,28,.9) 100%)",border:`1px solid ${col}22`,borderRadius:"12px",padding:"16px 20px",marginBottom:"20px",position:"relative",overflow:"hidden"}}>
+      {/* Accent line */}
+      <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:`linear-gradient(90deg,${col},transparent)`}}/>
+
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:"12px"}}>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--gold-dim)",letterSpacing:".14em",textTransform:"uppercase",marginBottom:"6px"}}>
+            📖 Today's Reflection
+          </div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"13px",fontWeight:600,color:"var(--text)",marginBottom:"4px",lineHeight:1.3}}>
+            {memory.title}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
+            <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:col,textTransform:"uppercase"}}>{memory.category}</span>
+            <span style={{fontSize:"9px",color:outCol}}>{OUTCOME_ICONS[memory.outcome]}</span>
+            <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)"}}>{memory.date}</span>
+          </div>
+          <div style={{fontSize:"12.5px",color:"var(--text-dim)",fontStyle:"italic",lineHeight:1.5,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+            {memory.situation}
+          </div>
+        </div>
+        <button onClick={getReflection} disabled={loading}
+          style={{background:loading?"rgba(201,153,58,.06)":"rgba(201,153,58,.12)",border:`1px solid ${col}33`,borderRadius:"8px",padding:"8px 14px",cursor:loading?"not-allowed":"pointer",fontFamily:"'Cinzel',serif",fontSize:"9px",color:"var(--gold)",letterSpacing:".07em",textTransform:"uppercase",transition:"all .2s",flexShrink:0,whiteSpace:"nowrap"}}
+          onMouseOver={e=>{if(!loading)e.target.style.background="rgba(201,153,58,.2)"}}
+          onMouseOut={e=>e.target.style.background=reflection?"rgba(201,153,58,.12)":"rgba(201,153,58,.12)"}>
+          {loading ? "..." : reflection ? (expanded ? "Hide" : "Show") : "Reflect →"}
+        </button>
+      </div>
+
+      {expanded && (
+        <div style={{marginTop:"14px",paddingTop:"14px",borderTop:`1px solid ${col}18`,animation:"fadeIn .3s ease"}}>
+          {loading && <div style={{display:"flex",gap:"6px",alignItems:"center",color:"var(--text-dim)",fontSize:"12px",fontStyle:"italic"}}><div className="dots"><div className="dot gold"/><div className="dot gold"/><div className="dot gold"/></div>Reflecting...</div>}
+          {error && <div style={{color:"var(--red)",fontSize:"11px",fontFamily:"'JetBrains Mono',monospace"}}>{error}</div>}
+          {reflection && !loading && (
+            <div style={{fontSize:"14px",color:"var(--text)",lineHeight:1.7,fontStyle:"italic"}}>
+              "{reflection}"
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1878,6 +1688,7 @@ function DashboardView({ memories, setView, setShowCapture }) {
         <button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture Memory</button>
       </div>
       <div className="view-body">
+        <DailyReflectionCard memories={memories}/>
         <div className="stats-grid">
           <div className="stat-card"><div className="stat-val">{memories.length}</div><div className="stat-lbl">Memories Indexed</div><div className="stat-sub">Life events recorded</div></div>
           <div className="stat-card"><div className="stat-val" style={{color:"var(--green)"}}>{Math.round(pos/memories.length*100)}%</div><div className="stat-lbl">Positive Outcomes</div><div className="stat-sub">{pos} wins · {neg} lessons</div></div>
@@ -2080,8 +1891,6 @@ export default function App() {
   const [collapsed,   setCollapsed]   = useState(false);
   const [apiKey,      setApiKey]      = useState(() => getStoredKey());
   const [showKeyModal,setShowKeyModal]= useState(false);
-  const [oauthProcessing, setOauthProcessing] = useState(false);
-  const [oauthError,      setOauthError]      = useState("");
 
   // Persist memories to localStorage whenever they change
   useEffect(() => { saveMemories(memories); }, [memories]);
@@ -2103,55 +1912,8 @@ export default function App() {
     });
   }, []);
 
-  // ── Handle Google OAuth callback ──────────────────────────────────────────
-  useEffect(() => {
-    const path   = window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-    const code   = params.get("code");
-    const oerr   = params.get("error");
-    if (path !== "/auth/callback") return;
-    // Clean the URL immediately so refresh doesn't re-trigger
-    window.history.replaceState({}, "", "/");
-    if (oerr) { setOauthError("Google login cancelled."); setActiveView("import"); return; }
-    if (!code) return;
-    setOauthProcessing(true);
-    fetch("/api/auth/exchange", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) throw new Error(data.error);
-        saveGmailTokens(data);
-        setActiveView("import");
-        setCollapsed(false);
-      })
-      .catch(e => setOauthError("Gmail connection failed: " + e.message))
-      .finally(() => setOauthProcessing(false));
-  }, []);
-
   const handleNav = (id) => { setActiveView(id); setCollapsed(true); };
   const handleKeySet = (k) => setApiKey(k);
-
-  // OAuth processing overlay
-  if (oauthProcessing) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div className="setup-overlay">
-          <div className="setup-card" style={{textAlign:"center"}}>
-            <div style={{fontSize:"36px",marginBottom:"16px"}}>📧</div>
-            <div className="setup-title">Connecting Gmail...</div>
-            <div style={{fontSize:"13px",color:"var(--text-dim)",marginTop:"8px",fontStyle:"italic"}}>Exchanging authorization code with Google</div>
-            <div className="dots" style={{justifyContent:"center",marginTop:"20px"}}>
-              <div className="dot gold"/><div className="dot gold"/><div className="dot gold"/>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
 
   // First-launch: no key stored → show setup screen
   // __free__ means user chose Gemini Nano — let them through
@@ -2197,7 +1959,7 @@ export default function App() {
             <div className="sb-logo-text">
               <h1>Life Replay OS</h1>
               <p>Decision Intelligence</p>
-              <div className="sb-badge">v4.0 · Gmail OAuth</div>
+              <div className="sb-badge">v5.0 · Diary + Reflection</div>
             </div>
             <button className="sb-toggle" onClick={() => setCollapsed(c => !c)} title={collapsed?"Expand":"Collapse"}>
               {collapsed ? "▶" : "◀"}
@@ -2237,16 +1999,7 @@ export default function App() {
           </div>
         </aside>
 
-        {/* ── MAIN CONTENT ── */}
-        <main className="main">
-          {oauthError && (
-            <div style={{margin:"16px 28px 0",padding:"10px 16px",background:"rgba(224,92,92,.08)",border:"1px solid rgba(224,92,92,.2)",borderRadius:"8px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",color:"var(--red)"}}>{oauthError}</span>
-              <button onClick={()=>setOauthError("")} style={{background:"none",border:"none",color:"var(--red)",cursor:"pointer",fontSize:"14px"}}>✕</button>
-            </div>
-          )}
-          {renderView()}
-        </main>
+        <main className="main">{renderView()}</main>
       </div>
 
       {/* ── KEY STATUS PILL (always visible top-right) ── */}
