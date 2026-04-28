@@ -629,39 +629,6 @@ function deduplicateBatch(candidates, existing) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FREE AI FALLBACK  (Chrome built-in Gemini Nano — no API key needed)
-// ─────────────────────────────────────────────────────────────────────────────
-let _nanoSession = null;
-async function getNanoSession() {
-  if (_nanoSession) return _nanoSession;
-  const ai = window.ai || window.chrome?.aiOriginTrial;
-  if (!ai?.languageModel) return null;
-  try {
-    const cap = await ai.languageModel.capabilities();
-    if (cap.available === "no") return null;
-    _nanoSession = await ai.languageModel.create({
-      systemPrompt: "You are a helpful personal decision assistant. Be concise and direct."
-    });
-    return _nanoSession;
-  } catch { return null; }
-}
-
-async function callFreeAI(prompt) {
-  const session = await getNanoSession();
-  if (!session) throw new Error("No free AI available on this device. Please add an Anthropic API key.");
-  const result = await session.prompt(prompt);
-  return result;
-}
-
-// Wrapper: tries Claude first, falls back to Gemini Nano if no API key
-async function callAIWithFallback(system, userMsg, maxTokens = 800) {
-  const key = getStoredKey();
-  if (key) return callClaude(system, userMsg, maxTokens);
-  // No key — try Gemini Nano
-  return callFreeAI(`${system}\n\n${userMsg}`);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // PERSONAL DIARY VIEW
 // ─────────────────────────────────────────────────────────────────────────────
 function DiaryView({ memories, onDelete }) {
@@ -892,12 +859,12 @@ function SetupScreen({ onKeySet }) {
 
         {/* Security note */}
         <div className="setup-security">
-          🔐 Key stored in your browser's localStorage only. Never sent to any server except Anthropic.
+          🔐 Key stored only in your browser — never on any server except Anthropic's.
         </div>
 
-        {/* Free AI fallback note */}
-        <div style={{padding:"10px 14px",background:"rgba(91,156,246,.05)",border:"1px solid rgba(91,156,246,.12)",borderRadius:"8px",marginBottom:"16px",fontSize:"12px",color:"rgba(91,156,246,.8)",lineHeight:"1.5"}}>
-          💡 <strong>On Chrome?</strong> You can skip the API key and use Chrome's built-in Gemini Nano AI (free, offline). Add a key later for full power.
+        {/* Cost reality check */}
+        <div style={{padding:"12px 14px",background:"rgba(201,153,58,.05)",border:"1px solid rgba(201,153,58,.1)",borderRadius:"8px",marginBottom:"16px",fontSize:"12.5px",color:"var(--text-dim)",lineHeight:"1.6"}}>
+          <strong style={{color:"var(--gold-dim)"}}>Real cost:</strong> A typical session (resume import + 3 AI queries) costs roughly <strong style={{color:"var(--text)"}}>₹0.25 – ₹0.50</strong>. Anthropic gives <strong style={{color:"var(--text)"}}>$5 free credit</strong> to new accounts — enough for months of normal use.
         </div>
 
         {error && (
@@ -908,12 +875,14 @@ function SetupScreen({ onKeySet }) {
 
         <button className="btn-primary" style={{width:"100%",padding:"12px",fontSize:"11px",marginBottom:"10px"}}
           onClick={testAndSave} disabled={!key.trim()||testing}>
-          {testing ? "Validating Key..." : "Activate with Anthropic Key →"}
+          {testing ? "Validating Key..." : "Activate Life Replay OS →"}
         </button>
-        <button className="btn-sec" style={{width:"100%",fontSize:"10px"}}
-          onClick={()=>onKeySet("__free__")}>
-          Skip — Use Free AI (Chrome / Gemini Nano)
-        </button>
+        <div style={{textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",letterSpacing:".06em"}}>
+          No account yet?{" "}
+          <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:"var(--gold-dim)",textDecoration:"none"}}>
+            console.anthropic.com →
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -1452,31 +1421,38 @@ function ImportHubView({ onImport, existingMemories = [] }) {
 
   const handleFile = async file => {
     if (!file) return;
+    // Read file FIRST before any state changes — mobile Safari loses file ref after setState
     let base64;
     try {
       base64 = await new Promise((res, rej) => {
         const reader = new FileReader();
         reader.onload  = () => res(reader.result.split(",")[1]);
-        reader.onerror = () => rej(new Error("Could not read file. Please try selecting it again."));
+        reader.onerror = () => rej(new Error("Could not read file. Try selecting it again."));
         reader.readAsDataURL(file);
       });
     } catch(e) { setError(e.message); return; }
 
-    reset(); setLoading(true); setProgress(15);
+    reset(); setLoading(true); setProgress(20);
     try {
-      setProgress(40);
+      setProgress(45);
       const sys = `Extract career roles, education degrees, certifications, and achievements from this resume as life memories.
 Return ONLY a valid JSON array, no markdown:
 [{"title":"Role/Degree at Org","date":"YYYY-MM-DD","category":"career|learning","situation":"Context of this period","decision":"What they chose","outcome":"positive|mixed|negative","outcomeDetail":"Duration and achievements","learned":"Key insight gained","tags":["skill"],"stress":4}]
 Rules: Extract 6-15 entries. Keep each field under 100 words. Estimate dates if not shown. Return only the JSON array.`;
-      const raw = await callClaudeWithDoc(sys, "Extract career and education events. JSON array only.", base64, "application/pdf", 2500);
+
+      const raw = await callClaudeWithDoc(
+        sys,
+        "Extract career and education events as life memories. Return only the JSON array.",
+        base64, "application/pdf", 2500
+      );
       setProgress(85);
       const items = parseItems(raw);
       setExtracted(items);
-      setSelected(new Set(items.map((_,i)=>i)));
+      setSelected(new Set(items.map((_,i) => i)));
       setProgress(100);
-    } catch(e) { setError("Extraction failed: " + e.message); }
-    finally { setLoading(false); }
+    } catch(e) {
+      setError("Extraction failed: " + e.message);
+    } finally { setLoading(false); }
   };
 
   const handlePaste = async () => {
@@ -1514,7 +1490,7 @@ Return only the JSON array, nothing else.`;
         {tab==="resume"&&(
           <div>
             <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 18px",marginBottom:"16px",fontSize:"13px",color:"var(--text-dim)"}}>
-              Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude extracts every role, degree, and achievement as dated memories. Takes up to 60 seconds.
+              Upload your <strong style={{color:"var(--text)"}}>Resume PDF</strong> — Claude reads every role, degree, and achievement and creates dated memories automatically.
             </div>
             <div className={`drop-zone${dragOver?" drag-over":""}`} onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}>
               <div className="drop-icon">📄</div>
@@ -1540,7 +1516,7 @@ Return only the JSON array, nothing else.`;
             <div className="progress-bar"><div className="progress-fill" style={{width:`${progress}%`}}/></div>
             <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",marginTop:"6px"}}>
               {tab==="resume"
-                ? progress<50 ? "Reading PDF..." : progress<85 ? "Extracting career timeline..." : "Almost done..."
+                ? progress<50 ? "Reading PDF..." : progress<85 ? "Claude extracting career timeline..." : "Almost done..."
                 : "Extracting life events..."}
             </div>
           </div>
@@ -1621,7 +1597,7 @@ Outcome: ${memory.outcome} — ${memory.outcomeDetail}
 Lesson noted: ${memory.learned}
 
 Generate one short personal reflection for today.`;
-      const res = await callAIWithFallback(sys, msg, 300);
+      const res = await callClaude(sys, msg, 300);
       setReflection(res);
     } catch(e) { setError(e.message); }
     finally { setLoading(false); releaseLock("reflection"); }
@@ -1916,7 +1892,6 @@ export default function App() {
   const handleKeySet = (k) => setApiKey(k);
 
   // First-launch: no key stored → show setup screen
-  // __free__ means user chose Gemini Nano — let them through
   if (!apiKey) {
     return (
       <>
@@ -2004,9 +1979,8 @@ export default function App() {
 
       {/* ── KEY STATUS PILL (always visible top-right) ── */}
       <button className="key-status-btn" onClick={() => setShowKeyModal(true)} title="API Key Settings">
-        <div className={`key-dot${apiKey && apiKey !== "__free__" ? "" : apiKey === "__free__" ? "" : " missing"}`}
-          style={apiKey === "__free__" ? {background:"var(--blue)"} : {}}/>
-        {apiKey === "__free__" ? "Gemini Nano (free)" : apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
+        <div className={`key-dot${apiKey ? "" : " missing"}`}/>
+        {apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
         <span style={{opacity:.5}}>⚙</span>
       </button>
 
