@@ -141,9 +141,11 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .mc-title{font-family:'Cinzel',serif;font-size:13px;font-weight:600;color:var(--text);margin-bottom:5px;letter-spacing:.02em;line-height:1.3}
 .mc-situation{font-size:12.5px;color:var(--text-dim);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mc-footer{display:flex;align-items:center;justify-content:space-between;margin-top:11px}
-.mc-delete{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:5px;background:rgba(224,92,92,0);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(224,92,92,0);transition:all .18s;z-index:2}
+.mc-delete{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:6px;background:rgba(224,92,92,0);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;color:rgba(224,92,92,0);transition:all .18s;z-index:2}
 .memory-card:hover .mc-delete{background:rgba(224,92,92,.12);color:rgba(224,92,92,.7)}
 .mc-delete:hover{background:rgba(224,92,92,.25) !important;color:#e05c5c !important}
+/* Mobile: always show delete button — no hover on touch screens */
+@media (hover:none){.mc-delete{background:rgba(224,92,92,.08)!important;color:rgba(224,92,92,.5)!important;border:1px solid rgba(224,92,92,.15)}}
 
 .mc-tags{display:flex;flex-wrap:wrap;gap:4px}
 .tag{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(201,153,58,.07);color:var(--gold-dim);letter-spacing:.04em}
@@ -309,9 +311,8 @@ body{background:var(--bg);color:var(--text);font-family:'Crimson Pro',Georgia,se
 .witem-type{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:4px}
 .witem-val{font-family:'Cinzel',serif;font-size:16px;font-weight:600}
 .witem-meta{font-size:11.5px;color:var(--text-dim);margin-top:3px}
-.witem-del{position:absolute;top:10px;right:10px;background:none;border:none;color:rgba(224,92,92,0);cursor:pointer;font-size:12px;transition:color .15s;padding:4px}
-.witem:hover .witem-del{color:rgba(224,92,92,.5)}
-.witem-del:hover{color:#e05c5c!important}
+.witem-del{position:absolute;top:10px;right:10px;background:rgba(224,92,92,.06);border:1px solid rgba(224,92,92,.15);border-radius:5px;color:rgba(224,92,92,.4);cursor:pointer;font-size:11px;transition:all .15s;padding:3px 7px}
+.witem-del:hover{background:rgba(224,92,92,.15)!important;color:#e05c5c!important;border-color:rgba(224,92,92,.3)!important}
 .wform{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
 .wform-title{font-family:'Cinzel',serif;font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--gold);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .wr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
@@ -1730,10 +1731,10 @@ function DiaryView({ memories, onDelete }) {
                       {/* Delete */}
                       {onDelete && (
                         <button onClick={()=>onDelete(m.id)}
-                          style={{marginTop:"8px",background:"none",border:"none",color:"rgba(224,92,92,.35)",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",letterSpacing:".05em",padding:"2px 0",transition:"color .15s"}}
-                          onMouseOver={e=>e.target.style.color="rgba(224,92,92,.8)"}
-                          onMouseOut={e=>e.target.style.color="rgba(224,92,92,.35)"}>
-                          ✕ delete entry
+                          style={{marginTop:"8px",background:"none",border:"1px solid rgba(224,92,92,.2)",borderRadius:"5px",color:"rgba(224,92,92,.6)",cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",letterSpacing:".05em",padding:"3px 10px",transition:"all .15s"}}
+                          onMouseOver={e=>{e.target.style.background="rgba(224,92,92,.1)";e.target.style.color="#e05c5c"}}
+                          onMouseOut={e=>{e.target.style.background="none";e.target.style.color="rgba(224,92,92,.6)"}}>
+                          ✕ delete
                         </button>
                       )}
                     </div>
@@ -2290,17 +2291,31 @@ function LifeGraph({ memories }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function MemoryCard({ m, onClick, onDelete }) {
   const col = CAT_COLORS[m.category]||"#888";
+
+  const handleDelete = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onDelete) onDelete(m.id);
+  };
+
   return (
     <div className="memory-card" onClick={()=>onClick(m)} style={{position:"relative"}}>
       <div style={{position:"absolute",top:0,left:0,right:0,height:"2px",background:col,opacity:.6,borderRadius:"11px 11px 0 0"}}/>
       {onDelete && (
-        <button className="mc-delete" title="Delete memory"
-          onClick={e=>{e.stopPropagation();onDelete(m.id);}}>✕</button>
+        <button
+          className="mc-delete"
+          title="Delete"
+          onClick={handleDelete}
+          onTouchEnd={handleDelete}
+        >✕</button>
       )}
       <div className="mc-header"><span className="mc-badge" style={{color:col}}>{m.category}</span><span style={{color:OUTCOME_COLORS[m.outcome],fontSize:"13px"}}>{OUTCOME_ICONS[m.outcome]}</span></div>
       <div className="mc-title">{m.title}</div>
       <div className="mc-situation">{m.situation}</div>
-      <div className="mc-footer"><span className="mc-date">{m.date}</span><div className="mc-tags">{m.tags.slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}</div></div>
+      <div className="mc-footer">
+        <span className="mc-date">{m.date}</span>
+        <div className="mc-tags">{(m.tags||[]).slice(0,2).map(t=><span key={t} className="tag">{t}</span>)}</div>
+      </div>
     </div>
   );
 }
@@ -2632,50 +2647,110 @@ Generate one short personal reflection for today.`;
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 function DashboardView({ memories, setView, setShowCapture }) {
-  const pos=memories.filter(m=>m.outcome==="positive").length;
-  const neg=memories.filter(m=>m.outcome==="negative").length;
-  const avgStress=(memories.reduce((a,m)=>a+m.stress,0)/memories.length).toFixed(1);
-  const sorted=[...memories].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const topLessons=memories.filter(m=>m.outcome==="positive"&&m.learned).slice(0,3);
+  const pos = memories.filter(m=>m.outcome==="positive").length;
+  const neg = memories.filter(m=>m.outcome==="negative").length;
+  const avgStress = memories.length ? (memories.reduce((a,m)=>a+m.stress,0)/memories.length).toFixed(1) : 0;
+  const sorted = [...memories].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const topLessons = memories.filter(m=>m.outcome==="positive"&&m.learned).slice(0,3);
+
+  const statCardStyle = {cursor:"pointer",transition:"all .18s"};
+  const statCardHover = (e) => { e.currentTarget.style.borderColor="rgba(201,153,58,.35)"; e.currentTarget.style.transform="translateY(-1px)"; };
+  const statCardOut  = (e) => { e.currentTarget.style.borderColor="var(--border)"; e.currentTarget.style.transform="none"; };
+
   return (
     <div>
       <div className="view-header">
         <div><div className="view-title">Life Intelligence Dashboard</div><div className="view-subtitle">Your personal decision archive — {memories.length} memories indexed</div></div>
-        <button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture Memory</button>
+        <button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture</button>
       </div>
       <div className="view-body">
         <DailyReflectionCard memories={memories}/>
+
+        {/* Stats — each navigates to relevant view */}
         <div className="stats-grid">
-          <div className="stat-card"><div className="stat-val">{memories.length}</div><div className="stat-lbl">Memories Indexed</div><div className="stat-sub">Life events recorded</div></div>
-          <div className="stat-card"><div className="stat-val" style={{color:"var(--green)"}}>{Math.round(pos/memories.length*100)}%</div><div className="stat-lbl">Positive Outcomes</div><div className="stat-sub">{pos} wins · {neg} lessons</div></div>
-          <div className="stat-card"><div className="stat-val" style={{color:avgStress>6?"var(--red)":avgStress>4?"var(--yellow)":"var(--green)"}}>{avgStress}</div><div className="stat-lbl">Avg Stress Level</div><div className="stat-sub">Across all decisions</div></div>
-          <div className="stat-card"><div className="stat-val">{[...new Set(memories.map(m=>m.category))].length}</div><div className="stat-lbl">Life Domains</div><div className="stat-sub">Areas of experience</div></div>
+          <div className="stat-card" style={statCardStyle} onClick={()=>setView("vault")} onMouseOver={statCardHover} onMouseOut={statCardOut}>
+            <div className="stat-val">{memories.length}</div>
+            <div className="stat-lbl">Memories Indexed</div>
+            <div className="stat-sub" style={{color:"var(--gold-dim)",fontSize:"10px"}}>→ View Vault</div>
+          </div>
+          <div className="stat-card" style={statCardStyle} onClick={()=>setView("diary")} onMouseOver={statCardHover} onMouseOut={statCardOut}>
+            <div className="stat-val" style={{color:"var(--green)"}}>{memories.length ? Math.round(pos/memories.length*100) : 0}%</div>
+            <div className="stat-lbl">Positive Outcomes</div>
+            <div className="stat-sub" style={{color:"var(--gold-dim)",fontSize:"10px"}}>{pos} wins · {neg} lessons → Diary</div>
+          </div>
+          <div className="stat-card" style={statCardStyle} onClick={()=>setView("blindspot")} onMouseOver={statCardHover} onMouseOut={statCardOut}>
+            <div className="stat-val" style={{color:avgStress>6?"var(--red)":avgStress>4?"var(--yellow)":"var(--green)"}}>{avgStress}</div>
+            <div className="stat-lbl">Avg Stress Level</div>
+            <div className="stat-sub" style={{color:"var(--gold-dim)",fontSize:"10px"}}>→ Detect Blindspots</div>
+          </div>
+          <div className="stat-card" style={statCardStyle} onClick={()=>setView("graph")} onMouseOver={statCardHover} onMouseOut={statCardOut}>
+            <div className="stat-val">{[...new Set(memories.map(m=>m.category))].length}</div>
+            <div className="stat-lbl">Life Domains</div>
+            <div className="stat-sub" style={{color:"var(--gold-dim)",fontSize:"10px"}}>→ Life Graph</div>
+          </div>
         </div>
+
+        {/* Quick actions */}
         <div className="quick-grid">
           <button className="qa-btn" onClick={()=>setView("decision")}><div className="qa-icon">⟁</div><div className="qa-label">Decision Engine</div><div className="qa-desc">Replay past for guidance</div></button>
           <button className="qa-btn" onClick={()=>setView("simulator")}><div className="qa-icon">◇</div><div className="qa-label">Future Simulator</div><div className="qa-desc">Model A vs B outcomes</div></button>
           <button className="qa-btn qa-red" onClick={()=>setView("premortem")}><div className="qa-icon">☠</div><div className="qa-label qa-label-red">Pre-Mortem</div><div className="qa-desc">Assume it fails. Why?</div></button>
           <button className="qa-btn qa-purple" onClick={()=>setView("blindspot")}><div className="qa-icon">◉</div><div className="qa-label qa-label-purple">Blindspot Scan</div><div className="qa-desc">Patterns you can't see</div></button>
         </div>
+
         <div className="two-col">
           <div>
-            <div className="section-title">Recent Memories</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div className="section-title" style={{margin:0}}>Recent Memories</div>
+              <button onClick={()=>setView("vault")} style={{background:"none",border:"none",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--gold-dim)",cursor:"pointer",letterSpacing:".06em"}}>VIEW ALL →</button>
+            </div>
             <div className="recent-list">
               {sorted.slice(0,5).map(m=>(
-                <div key={m.id} className="recent-item" onClick={()=>setView("vault")}>
+                <div key={m.id} className="recent-item" onClick={()=>setView("diary")}>
                   <div className="r-icon" style={{background:`${CAT_COLORS[m.category]}18`,color:CAT_COLORS[m.category]}}>{CAT_ICONS[m.category]}</div>
-                  <div><div className="r-title">{m.title}</div><div className="r-meta">{m.category} · {m.date}</div></div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="r-title">{m.title}</div>
+                    <div className="r-meta">{m.category} · {m.date}</div>
+                  </div>
                   <span className="r-outcome" style={{color:OUTCOME_COLORS[m.outcome]}}>{OUTCOME_ICONS[m.outcome]}</span>
                 </div>
               ))}
             </div>
           </div>
           <div>
-            <div className="section-title">Top Patterns</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
+              <div className="section-title" style={{margin:0}}>Top Patterns</div>
+              <button onClick={()=>setView("diary")} style={{background:"none",border:"none",fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--gold-dim)",cursor:"pointer",letterSpacing:".06em"}}>ALL →</button>
+            </div>
             <div className="insights-list">
-              {topLessons.map(m=><div key={m.id} className="insight-block"><div className="insight-text">"{m.learned}"</div><div className="insight-src">↑ {m.title}</div></div>)}
+              {topLessons.map(m=>(
+                <div key={m.id} className="insight-block" style={{cursor:"pointer"}} onClick={()=>setView("diary")}>
+                  <div className="insight-text">"{m.learned}"</div>
+                  <div className="insight-src">↑ {m.title}</div>
+                </div>
+              ))}
+              {topLessons.length === 0 && (
+                <div style={{fontSize:"13px",color:"var(--text-muted)",fontStyle:"italic",padding:"8px 0"}}>
+                  Add positive outcome memories to see patterns
+                </div>
+              )}
             </div>
           </div>
+        </div>
+
+        {/* Bottom shortcuts row */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginTop:"20px"}}>
+          {[
+            {icon:"◎",label:"Wealth OS",view:"wealth",desc:"Net worth · Loans · Insurance"},
+            {icon:"🗂",label:"Documents",view:"documents",desc:"Aadhaar · PAN · Policies"},
+            {icon:"⊕",label:"Import Hub",view:"import",desc:"Resume · Paste document"},
+          ].map(item=>(
+            <div key={item.view} className="qa-btn" onClick={()=>setView(item.view)} style={{textAlign:"center",padding:"12px 8px"}}>
+              <div style={{fontSize:"18px",marginBottom:"5px"}}>{item.icon}</div>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:"10px",fontWeight:600,letterSpacing:".06em",color:"var(--gold)",marginBottom:"3px"}}>{item.label}</div>
+              <div style={{fontSize:"10px",color:"var(--text-muted)"}}>{item.desc}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -2686,27 +2761,58 @@ function DashboardView({ memories, setView, setShowCapture }) {
 // VAULT
 // ─────────────────────────────────────────────────────────────────────────────
 function VaultView({ memories, setShowCapture, onDelete }) {
-  const [filter,setFilter]=useState("all");
-  const [selected,setSelected]=useState(null);
-  const cats=["all",...new Set(memories.map(m=>m.category))];
-  const filtered=filter==="all"?memories:memories.filter(m=>m.category===filter);
+  const [filter,setFilter] = useState("all");
+  const [selected,setSelected] = useState(null);
+
+  // Derive unique categories from actual memories
+  const cats = ["all", ...new Set(memories.map(m => m.category).filter(Boolean))];
+
+  // Strict filter — only exact category match
+  const filtered = filter === "all"
+    ? memories
+    : memories.filter(m => m.category === filter);
+
+  // When a memory is deleted, close its detail modal if open
+  const handleDelete = (id) => {
+    if (selected?.id === id) setSelected(null);
+    onDelete(id);
+  };
+
   return (
     <div>
       <div className="view-header">
-        <div><div className="view-title">Memory Vault</div><div className="view-subtitle">All indexed life events — hover a card to delete it</div></div>
+        <div>
+          <div className="view-title">Memory Vault</div>
+          <div className="view-subtitle">All indexed life events — tap ✕ to delete</div>
+        </div>
         <button className="btn-primary" onClick={()=>setShowCapture(true)} style={{marginTop:"4px"}}>+ Capture</button>
       </div>
       <div className="view-body">
         <div className="vault-toolbar">
-          {cats.map(c=><button key={c} className={`filter-btn${filter===c?" active":""}`} onClick={()=>setFilter(c)} style={filter===c&&c!=="all"?{color:CAT_COLORS[c],borderColor:`${CAT_COLORS[c]}40`}:{}}>{c}</button>)}
-          <span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>{filtered.length} records</span>
+          {cats.map(c => (
+            <button key={c}
+              className={`filter-btn${filter===c?" active":""}`}
+              onClick={()=>{ setFilter(c); setSelected(null); }}
+              style={filter===c&&c!=="all"?{color:CAT_COLORS[c],borderColor:`${CAT_COLORS[c]}40`}:{}}>
+              {c} {c!=="all" && `(${memories.filter(m=>m.category===c).length})`}
+            </button>
+          ))}
+          <span style={{marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)"}}>
+            {filtered.length} records
+          </span>
         </div>
-        {filtered.length===0
-          ? <div className="empty-state"><div className="empty-icon">◈</div><div className="empty-title">No memories here</div></div>
-          : <div className="memory-grid">{filtered.map(m=><MemoryCard key={m.id} m={m} onClick={setSelected} onDelete={onDelete}/>)}</div>
+
+        {/* key={filter} forces React to rebuild grid when filter changes */}
+        {filtered.length === 0
+          ? <div className="empty-state"><div className="empty-icon">◈</div><div className="empty-title">No {filter} memories</div><div className="empty-desc">Nothing in this category yet</div></div>
+          : <div key={filter} className="memory-grid">
+              {filtered.map(m => (
+                <MemoryCard key={m.id} m={m} onClick={setSelected} onDelete={handleDelete}/>
+              ))}
+            </div>
         }
       </div>
-      {selected && <DetailModal m={selected} onClose={()=>setSelected(null)} onDelete={onDelete}/>}
+      {selected && <DetailModal m={selected} onClose={()=>setSelected(null)} onDelete={handleDelete}/>}
     </div>
   );
 }
@@ -2872,13 +2978,13 @@ export default function App() {
     });
   }, []);
 
-  const deleteMemory = useCallback(id => {
+  const deleteMemory = (id) => {
     setMemories(prev => {
       const updated = prev.filter(m => m.id !== id);
       saveMemories(updated);
       return updated;
     });
-  }, []);
+  };
 
   const handleNav = (id) => { setActiveView(id); setCollapsed(true); };
   const handleKeySet = (k) => setApiKey(k);
