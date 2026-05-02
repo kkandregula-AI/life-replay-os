@@ -1854,8 +1854,20 @@ function SetupScreen({ onKeySet }) {
 
         <button className="btn-primary" style={{width:"100%",padding:"12px",fontSize:"11px",marginBottom:"10px"}}
           onClick={testAndSave} disabled={!key.trim()||testing}>
-          {testing ? "Validating Key..." : "Activate Life Replay OS →"}
+          {testing ? "Validating Key..." : "Activate with API Key →"}
         </button>
+
+        <div style={{display:"flex",alignItems:"center",gap:"10px",margin:"4px 0 12px"}}>
+          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".1em"}}>OR</span>
+          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
+        </div>
+
+        <button className="btn-sec" style={{width:"100%",fontSize:"10px",padding:"10px",marginBottom:"12px"}}
+          onClick={()=>onKeySet("__nokey__")}>
+          Continue without AI — use as personal vault only
+        </button>
+
         <div style={{textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",letterSpacing:".06em"}}>
           No account yet?{" "}
           <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:"var(--gold-dim)",textDecoration:"none"}}>
@@ -1876,7 +1888,7 @@ function KeyModal({ currentKey, onClose, onKeyUpdated }) {
   const [testing, setTesting] = useState(false);
   const [error, setError]     = useState("");
 
-  const masked = currentKey ? "sk-ant-..." + currentKey.slice(-6) : "Not set";
+  const masked = currentKey === "__nokey__" ? "No AI mode (no key set)" : currentKey ? "sk-ant-..." + currentKey.slice(-6) : "Not set";
 
   const testAndUpdate = async () => {
     const trimmed = key.trim();
@@ -1973,7 +1985,7 @@ function ErrBox({ msg }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PRE-MORTEM VIEW  🔥 NEW
 // ─────────────────────────────────────────────────────────────────────────────
-function PreMortemView({ memories }) {
+function PreMortemView({ memories, noKeyBanner }) {
   const [decision, setDecision] = useState("");
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2029,7 +2041,7 @@ Do NOT say "this is just a simulation." Treat it as real analysis.`;
         </div>
       </div>
       <div className="view-body">
-
+        {noKeyBanner}
         {/* Hero */}
         <div className="pm-hero">
           <div className="pm-hero-label">⚠ Failure Simulation Active</div>
@@ -2092,7 +2104,7 @@ Do NOT say "this is just a simulation." Treat it as real analysis.`;
 // ─────────────────────────────────────────────────────────────────────────────
 // BLINDSPOT DETECTOR VIEW  🔥 NEW
 // ─────────────────────────────────────────────────────────────────────────────
-function BlindspotView({ memories }) {
+function BlindspotView({ memories, noKeyBanner }) {
   const [result, setResult]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
@@ -2158,7 +2170,7 @@ Return ONLY the JSON array. Be honest and specific, not generic.`;
         </div>
       </div>
       <div className="view-body">
-
+        {noKeyBanner}
         {/* Hero */}
         <div className="bs-hero">
           <div className="bs-hero-label">◉ Neural Pattern Analysis</div>
@@ -2820,7 +2832,7 @@ function VaultView({ memories, setShowCapture, onDelete }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DECISION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
-function DecisionEngineView({ memories }) {
+function DecisionEngineView({ memories, noKeyBanner }) {
   const [question,setQuestion]=useState("");
   const [response,setResponse]=useState("");
   const [loading,setLoading]=useState(false);
@@ -2850,6 +2862,7 @@ function DecisionEngineView({ memories }) {
     <div>
       <div className="view-header"><div><div className="view-title">Decision Engine</div><div className="view-subtitle">Your past self holds the answer</div></div></div>
       <div className="view-body">
+        {noKeyBanner}
         <div className="ai-panel">
           <div className="ai-panel-title">⟁ Ask the Engine</div>
           <textarea className="ai-textarea" rows={3} placeholder="What decision are you facing?" value={question} onChange={e=>handleQuestion(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&e.metaKey)ask()}}/>
@@ -2877,7 +2890,7 @@ function DecisionEngineView({ memories }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FUTURE SIMULATOR
 // ─────────────────────────────────────────────────────────────────────────────
-function FutureSimView({ memories }) {
+function FutureSimView({ memories, noKeyBanner }) {
   const [situation,setSituation]=useState("");
   const [optA,setOptA]=useState("");
   const [optB,setOptB]=useState("");
@@ -2900,6 +2913,7 @@ function FutureSimView({ memories }) {
     <div>
       <div className="view-header"><div><div className="view-title">Future Simulator</div><div className="view-subtitle">Model Option A vs B against your personal history</div></div></div>
       <div className="view-body">
+        {noKeyBanner}
         <div className="ai-panel">
           <div className="ai-panel-title">◇ Decision Parameters</div>
           <div className="fg" style={{marginBottom:"14px"}}><label className="fl">Current Situation</label><textarea className="ai-textarea" rows={2} placeholder="Describe what you are facing..." value={situation} onChange={e=>setSituation(e.target.value)}/></div>
@@ -2990,6 +3004,7 @@ export default function App() {
   const handleKeySet = (k) => setApiKey(k);
 
   // First-launch: no key stored → show setup screen
+  // __nokey__ = user chose to continue without AI
   if (!apiKey) {
     return (
       <>
@@ -2999,15 +3014,29 @@ export default function App() {
     );
   }
 
+  // Banner shown inside AI views when no real key
+  const NoKeyBanner = () => (
+    <div style={{margin:"0 0 16px",padding:"12px 16px",background:"rgba(240,180,41,.06)",border:"1px solid rgba(240,180,41,.2)",borderRadius:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontFamily:"'Cinzel',serif",fontSize:"11px",color:"var(--yellow)",letterSpacing:".06em",marginBottom:"3px"}}>No API Key — AI features disabled</div>
+        <div style={{fontSize:"12px",color:"var(--text-dim)"}}>Add an Anthropic API key to unlock Decision Engine, Pre-Mortem, Blindspot Detector and more.</div>
+      </div>
+      <button className="btn-primary" style={{fontSize:"9px",padding:"7px 14px",flexShrink:0}}
+        onClick={()=>setShowKeyModal(true)}>Add Key →</button>
+    </div>
+  );
+
+  const isNoKey = apiKey === "__nokey__";
+
   const renderView = () => {
     switch(activeView) {
       case "dashboard": return <DashboardView memories={memories} setView={handleNav} setShowCapture={setShowCapture}/>;
       case "vault":     return <VaultView memories={memories} setShowCapture={setShowCapture} onDelete={deleteMemory}/>;
       case "diary":     return <DiaryView memories={memories} onDelete={deleteMemory}/>;
-      case "decision":  return <DecisionEngineView memories={memories}/>;
-      case "simulator": return <FutureSimView memories={memories}/>;
-      case "premortem": return <PreMortemView memories={memories}/>;
-      case "blindspot": return <BlindspotView memories={memories}/>;
+      case "decision":  return <DecisionEngineView memories={memories} noKeyBanner={isNoKey ? <NoKeyBanner/> : null}/>;
+      case "simulator": return <FutureSimView memories={memories} noKeyBanner={isNoKey ? <NoKeyBanner/> : null}/>;
+      case "premortem": return <PreMortemView memories={memories} noKeyBanner={isNoKey ? <NoKeyBanner/> : null}/>;
+      case "blindspot": return <BlindspotView memories={memories} noKeyBanner={isNoKey ? <NoKeyBanner/> : null}/>;
       case "wealth":    return <WealthView/>;
       case "documents": return <DocumentVaultView/>;
       case "graph":     return <GraphView memories={memories}/>;
@@ -3079,8 +3108,8 @@ export default function App() {
 
       {/* ── KEY STATUS PILL (always visible top-right) ── */}
       <button className="key-status-btn" onClick={() => setShowKeyModal(true)} title="API Key Settings">
-        <div className={`key-dot${apiKey ? "" : " missing"}`}/>
-        {apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
+        <div className={`key-dot${(apiKey && apiKey !== "__nokey__") ? "" : " missing"}`}/>
+        {apiKey === "__nokey__" ? "No AI mode" : apiKey ? "sk-ant-..." + apiKey.slice(-4) : "No Key"}
         <span style={{opacity:.5}}>⚙</span>
       </button>
 
