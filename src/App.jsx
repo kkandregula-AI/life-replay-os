@@ -1787,38 +1787,36 @@ function SetupScreen({ onKeySet }) {
       <div className="setup-card">
         {/* Brand */}
         <div className="setup-logo">Life Replay OS</div>
-        <div className="setup-tagline">DECISION INTELLIGENCE SYSTEM · v3.0</div>
+        <div className="setup-tagline">DECISION INTELLIGENCE SYSTEM</div>
 
-        <span className="setup-icon">🧠</span>
-        <div className="setup-title">Connect Your AI Brain</div>
-        <div className="setup-desc">
-          This app uses Claude AI to replay your past decisions, detect blindspots, and simulate futures.
-          Enter your Anthropic API key — it's stored only on this device and sent securely with every request.
+        {/* Skip button — FIRST, always visible without scrolling */}
+        <button
+          onClick={()=>onKeySet("__nokey__")}
+          style={{width:"100%",padding:"11px",marginBottom:"16px",marginTop:"12px",background:"rgba(255,255,255,.04)",border:"1px solid var(--border)",borderRadius:"9px",cursor:"pointer",fontFamily:"'Crimson Pro',serif",fontSize:"14px",color:"var(--text-dim)",transition:"all .18s"}}
+          onMouseOver={e=>e.currentTarget.style.borderColor="rgba(201,153,58,.3)"}
+          onMouseOut={e=>e.currentTarget.style.borderColor="var(--border)"}>
+          Enter without AI key — use as personal vault
+        </button>
+
+        {/* Divider */}
+        <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"16px"}}>
+          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".1em"}}>UNLOCK AI FEATURES</span>
+          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
         </div>
 
-        {/* Steps */}
-        <div className="setup-steps">
-          <div className="setup-step">
-            <span className="setup-step-num">01</span>
-            <div className="setup-step-text">Go to <strong>console.anthropic.com</strong> → API Keys → Create Key</div>
-          </div>
-          <div className="setup-step">
-            <span className="setup-step-num">02</span>
-            <div className="setup-step-text">Copy the key that starts with <strong>sk-ant-api03-...</strong></div>
-          </div>
-          <div className="setup-step">
-            <span className="setup-step-num">03</span>
-            <div className="setup-step-text">Paste it below — the app validates it once, then remembers it forever</div>
-          </div>
+        <div className="setup-desc" style={{marginBottom:"16px"}}>
+          Add an Anthropic API key to enable Decision Engine, Pre-Mortem, Blindspot Detector and more.
+          Key stored only on this device. ~₹0.25 per session.
         </div>
 
         {/* Input */}
-        <label className="setup-label">Your Anthropic API Key</label>
+        <label className="setup-label">Anthropic API Key</label>
         <div className="setup-input-wrap">
           <input
             className="setup-input"
             type={show ? "text" : "password"}
-            placeholder="sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxx..."
+            placeholder="sk-ant-api03-..."
             value={key}
             onChange={e => { setKey(e.target.value); setError(""); }}
             onKeyDown={e => e.key === "Enter" && testAndSave()}
@@ -1830,50 +1828,22 @@ function SetupScreen({ onKeySet }) {
           </button>
         </div>
 
-        <div className="setup-hint">
-          Free tier available at{" "}
+        <div className="setup-hint" style={{marginBottom:"14px"}}>
+          Get a free key at{" "}
           <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">console.anthropic.com</a>
-          {" "}· ~$0.003 per typical conversation
-        </div>
-
-        {/* Security note */}
-        <div className="setup-security">
-          🔐 Key stored only in your browser — never on any server except Anthropic's.
-        </div>
-
-        {/* Cost reality check */}
-        <div style={{padding:"12px 14px",background:"rgba(201,153,58,.05)",border:"1px solid rgba(201,153,58,.1)",borderRadius:"8px",marginBottom:"16px",fontSize:"12.5px",color:"var(--text-dim)",lineHeight:"1.6"}}>
-          <strong style={{color:"var(--gold-dim)"}}>Real cost:</strong> A typical session (resume import + 3 AI queries) costs roughly <strong style={{color:"var(--text)"}}>₹0.25 – ₹0.50</strong>. Anthropic gives <strong style={{color:"var(--text)"}}>$5 free credit</strong> to new accounts — enough for months of normal use.
+          {" "}→ API Keys → Create Key
         </div>
 
         {error && (
-          <div style={{color:"var(--red)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",padding:"10px 14px",background:"rgba(224,92,92,.08)",borderRadius:"8px",border:"1px solid rgba(224,92,92,.2)",marginBottom:"16px"}}>
+          <div style={{color:"var(--red)",fontFamily:"'JetBrains Mono',monospace",fontSize:"10px",padding:"10px 14px",background:"rgba(224,92,92,.08)",borderRadius:"8px",border:"1px solid rgba(224,92,92,.2)",marginBottom:"14px"}}>
             {error}
           </div>
         )}
 
-        <button className="btn-primary" style={{width:"100%",padding:"12px",fontSize:"11px",marginBottom:"10px"}}
+        <button className="btn-primary" style={{width:"100%",padding:"12px",fontSize:"11px"}}
           onClick={testAndSave} disabled={!key.trim()||testing}>
           {testing ? "Validating Key..." : "Activate with API Key →"}
         </button>
-
-        <div style={{display:"flex",alignItems:"center",gap:"10px",margin:"4px 0 12px"}}>
-          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
-          <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:"8px",color:"var(--text-muted)",letterSpacing:".1em"}}>OR</span>
-          <div style={{flex:1,height:"1px",background:"var(--border)"}}/>
-        </div>
-
-        <button className="btn-sec" style={{width:"100%",fontSize:"10px",padding:"10px",marginBottom:"12px"}}
-          onClick={()=>onKeySet("__nokey__")}>
-          Continue without AI — use as personal vault only
-        </button>
-
-        <div style={{textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontSize:"9px",color:"var(--text-muted)",letterSpacing:".06em"}}>
-          No account yet?{" "}
-          <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:"var(--gold-dim)",textDecoration:"none"}}>
-            console.anthropic.com →
-          </a>
-        </div>
       </div>
     </div>
   );
